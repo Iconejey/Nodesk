@@ -1,4 +1,5 @@
 @import url('https://fonts.cdnfonts.com/css/consolas');
+@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined');
 
 :root {
 	--white: #ffffff;
@@ -25,12 +26,19 @@
 	--blue-pale: #a4b8e3;
 }
 
+html {
+	height: 100%;
+	overflow: hidden;
+}
+
 body {
 	background-color: rgba(25, 25, 25, 0.94);
 	color: var(--gray-light);
 	font-family: 'Consolas', monospace;
 	margin: 0;
-	justify-content: end;
+	height: 100%;
+	box-sizing: border-box;
+	overflow-y: auto;
 }
 
 terminal-chat {
@@ -38,7 +46,7 @@ terminal-chat {
 	flex-direction: column;
 
 	& chat-block {
-		padding: 0.5rem 1.25rem;
+		padding: 0.75rem 1.25rem;
 
 		&:hover {
 			background-color: color-mix(in srgb, var(--charcoal-light) 50%, transparent);
@@ -48,11 +56,28 @@ terminal-chat {
 			white-space: pre-wrap;
 			font-family: 'Consolas', monospace;
 			margin: 0;
+			outline: none;
+			line-height: 1.3;
 		}
 
 		&[from='user'] pre.input::before {
-			content: '> ';
+			content: 'chevron_right';
+			font-family: 'Material Symbols Outlined';
 			color: var(--green);
+			font-size: 1.1em;
+			vertical-align: -0.2em;
+			transform: translateX(-15%);
+			margin-right: 4px;
+			display: inline-block;
+			font-weight: normal;
+			font-style: normal;
+			line-height: 1;
+			text-transform: none;
+			letter-spacing: normal;
+			word-wrap: normal;
+			white-space: nowrap;
+			direction: ltr;
+			-webkit-font-smoothing: antialiased;
 		}
 
 		&[from='assistant'] pre.input {
@@ -71,4 +96,34 @@ terminal-chat {
 			}
 		}
 	}
+}
+
+/* VS Code-like Custom Scrollbars */
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+	background: transparent;
+}
+
+body:hover ::-webkit-scrollbar-thumb {
+	background: color-mix(in srgb, var(--gray) 20%, transparent);
+}
+
+::-webkit-scrollbar-thumb:hover {
+	background: color-mix(in srgb, var(--gray) 20%, transparent) !important;
+}
+
+::-webkit-scrollbar-thumb:active {
+	background: color-mix(in srgb, var(--gray) 20%, transparent) !important;
+}
+
+::-webkit-scrollbar-corner {
+	background: transparent;
 }

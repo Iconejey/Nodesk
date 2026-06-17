@@ -1,0 +1,19 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('api', {
+  sendUserCommand: (command) => ipcRenderer.send('run-user-command', command),
+  sendAgentPrompt: (prompt) => ipcRenderer.send('run-agent-prompt', prompt),
+  sendInterrupt: () => ipcRenderer.send('shell-interrupt'),
+  onShellOutput: (callback) => ipcRenderer.on('shell-output', (event, data) => callback(data)),
+  onShellComplete: (callback) => ipcRenderer.on('shell-complete', (event, info) => callback(info)),
+  onAgentChunk: (callback) => ipcRenderer.on('agent-chunk', (event, info) => callback(info)),
+  onAgentComplete: (callback) => ipcRenderer.on('agent-complete', (event) => callback()),
+  onAgentToolStart: (callback) => ipcRenderer.on('agent-tool-start', (event, info) => callback(info)),
+  onAgentToolOutput: (callback) => ipcRenderer.on('agent-tool-output', (event, info) => callback(info)),
+  onAgentToolComplete: (callback) => ipcRenderer.on('agent-tool-complete', (event, info) => callback(info)),
+  onAgentStatus: (callback) => ipcRenderer.on('agent-status', (event, status) => callback(status)),
+  onWindowInit: (callback) => ipcRenderer.on('window-init', (event, info) => callback(info)),
+  executeSlashCommand: (command) => ipcRenderer.send('execute-slash-command', command),
+  sendApiKey: (key) => ipcRenderer.send('send-api-key', key),
+  requestState: () => ipcRenderer.send('request-state')
+});

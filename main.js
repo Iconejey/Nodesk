@@ -706,6 +706,15 @@ async function runAgentLoop(session, prompt) {
 	}
 }
 
+function toggleDebugMode(win) {
+	const current_url = win.webContents.getURL();
+	if (current_url.includes('example.html')) {
+		win.loadFile('window/index.html');
+	} else {
+		win.loadFile('window/example.html');
+	}
+}
+
 // Window creation function
 function createWindow(initial_cwd) {
 	Menu.setApplicationMenu(null);
@@ -726,12 +735,18 @@ function createWindow(initial_cwd) {
 	win.removeMenu();
 
 	win.webContents.on('before-input-event', (event, input) => {
+		if (input.type !== 'keyDown') return;
+
 		if ((input.control || input.meta) && input.key.toLowerCase() === 'r') {
 			win.reload();
 			event.preventDefault();
 		}
 		if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'i') {
 			win.webContents.toggleDevTools();
+			event.preventDefault();
+		}
+		if ((input.control || input.meta) && input.shift && input.key.toLowerCase() === 'd') {
+			toggleDebugMode(win);
 			event.preventDefault();
 		}
 	});
@@ -968,5 +983,12 @@ ipcMain.on('request-state', event => {
 			repoMap: generateRepoMap(data.session.current_cwd),
 			availableCommands: getAvailableCommands()
 		});
+	}
+});
+
+ipcMain.on('toggle-debug-mode', event => {
+	const data = active_windows.get(event.sender.id);
+	if (data) {
+		toggleDebugMode(data.win);
 	}
 });

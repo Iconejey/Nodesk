@@ -413,6 +413,9 @@ window.addEventListener('DOMContentLoaded', () => {
 		setupInputListeners(active_input);
 		active_input.focus();
 	}
+
+	// Request initial state on load/reload to restore session variables
+	window.api.requestState();
 });
 
 // IPC listeners
@@ -521,21 +524,15 @@ window.api.onAgentToolStart(info => {
 	} else {
 		// Other tools (e.g. read_file, edit_file) shown as tool status lines
 		const pre_status = document.createElement('pre');
-		pre_status.className = 'input msg';
+		pre_status.className = 'input';
 		pre_status.dataset.toolCallId = info.tool_call_id;
 
 		let label = '';
-		if (info.name === 'read_file') {
-			label = `Reading ${info.args.path}`;
-		} else if (info.name === 'edit_file') {
-			label = `Editing ${info.args.path}`;
-		} else if (info.name === 'search_codebase') {
-			label = `Searching codebase for "${info.args.query}"`;
-		} else if (info.name === 'list_directory') {
-			label = `Listing directory ${info.args.path || '.'}`;
-		} else {
-			label = `Running ${info.name}...`;
-		}
+		if (info.name === 'read_file') label = `Reading ${info.args.path}`;
+		else if (info.name === 'edit_file') label = `Editing ${info.args.path}`;
+		else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
+		else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
+		else label = `Running ${info.name}...`;
 
 		pre_status.textContent = label;
 		chat_block.appendChild(pre_status);

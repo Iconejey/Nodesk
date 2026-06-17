@@ -15,5 +15,6 @@ contextBridge.exposeInMainWorld('api', {
   onWindowInit: (callback) => ipcRenderer.on('window-init', (event, info) => callback(info)),
   executeSlashCommand: (command) => ipcRenderer.send('execute-slash-command', command),
   sendApiKey: (key) => ipcRenderer.send('send-api-key', key),
+  toggleDebugMode: () => ipcRenderer.send('toggle-debug-mode'),
   requestState: () => ipcRenderer.send('request-state')
 });

@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>Nono-Terminal - Style Debugger</title>
+		<link rel="stylesheet" href="style.css" />
+		<style>
+			/* Custom Styles for Debugger Header */
+			.debug-header {
+				position: sticky;
+				top: 0;
+				left: 0;
+				right: 0;
+				background: rgba(30, 30, 30, 0.85);
+				backdrop-filter: blur(12px);
+				-webkit-backdrop-filter: blur(12px);
+				border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+				padding: 10px 20px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+				z-index: 1000;
+				box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+				user-select: none;
+				-webkit-app-region: drag; /* allows dragging the window since frame: false */
+			}
+			.debug-title-area {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				font-weight: bold;
+				color: var(--purple);
+			}
+			.debug-title-icon {
+				font-family: 'Material Symbols Outlined';
+				font-size: 1.3em;
+				vertical-align: middle;
+			}
+			.debug-controls {
+				display: flex;
+				gap: 10px;
+				align-items: center;
+				-webkit-app-region: no-drag;
+			}
+			.btn-debug {
+				background: var(--charcoal);
+				border: 1px solid var(--gray-dark);
+				color: var(--gray-light);
+				padding: 6px 12px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-family: 'Consolas', monospace;
+				font-size: 0.85em;
+				transition: all 0.2s ease;
+				display: flex;
+				align-items: center;
+				gap: 5px;
+			}
+			.btn-debug:hover {
+				background: var(--charcoal-light);
+				border-color: var(--purple);
+				color: var(--white);
+			}
+			.btn-debug.active {
+				background: var(--purple);
+				border-color: var(--purple);
+				color: var(--black);
+				font-weight: bold;
+			}
+			.debug-shortcut-hint {
+				font-size: 0.8em;
+				color: var(--gray);
+				margin-right: 10px;
+			}
+			.btn-back {
+				background: transparent;
+				border: 1px solid rgba(255, 255, 255, 0.2);
+				color: var(--gray-light);
+			}
+			.btn-back:hover {
+				background: rgba(255, 255, 255, 0.1);
+				color: var(--white);
+			}
+			.debug-toast {
+				position: fixed;
+				bottom: 20px;
+				right: 20px;
+				background: rgba(199, 146, 234, 0.9);
+				color: var(--black);
+				padding: 10px 20px;
+				border-radius: 4px;
+				font-size: 0.9em;
+				font-weight: bold;
+				box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+				z-index: 2000;
+				display: none;
+				animation: fadeIn 0.3s, fadeOut 0.3s 2.7s;
+			}
+			@keyframes fadeIn {
+				from { opacity: 0; transform: translateY(10px); }
+				to { opacity: 1; transform: translateY(0); }
+			}
+			/* Shift terminal chat container down to make room for sticky header */
+			terminal-chat {
+				padding-top: 10px;
+				padding-bottom: 50px !important; /* overrides standard huge bottom padding for easier scrolling in debug */
+			}
+		</style>
+	</head>
+	<body>
+		<div class="debug-header">
+			<div class="debug-title-area">
+				<span class="debug-title-icon">palette</span>
+				<span>Style Debug Mode</span>
+			</div>
+			<div class="debug-controls">
+				<span class="debug-shortcut-hint">Toggle: Ctrl+Shift+D</span>
+				
+				<button class="btn-debug active" id="btn-full" onclick="setMode('full')">
+					<span class="debug-title-icon" style="font-size: 1.1em;">visibility</span> Full
+				</button>
+				<button class="btn-debug" id="btn-collapsed" onclick="setMode('collapsed')">
+					<span class="debug-title-icon" style="font-size: 1.1em;">unfold_less</span> Collapsed
+				</button>
+				<button class="btn-debug" id="btn-last" onclick="setMode('last')">
+					<span class="debug-title-icon" style="font-size: 1.1em;">unfold_more</span> Last-Only
+				</button>
+				
+				<button class="btn-debug btn-back" id="btn-exit-debug">
+					<span class="debug-title-icon" style="font-size: 1.1em;">arrow_back</span> Terminal
+				</button>
+			</div>
+		</div>
+
+		<terminal-chat class="mode-full" id="terminal-chat-container">
+			
+			<!-- Section 1: User command and output -->
+			<chat-block from="user">
+				<pre class="input">git status</pre>
+				<pre class="output">On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add &lt;file&gt;..." to update what will be committed)
+  (use "git restore &lt;file&gt;..." to discard changes in working directory)
+	modified:   window/style.css
+	modified:   window/window.js
+
+no changes added to commit (use "git add" and/or "git commit -a")</pre>
+				<div class="output-placeholder">[8 lines of output]</div>
+			</chat-block>
+			
+			<!-- Section 2: User AI Prompt with Suggestions overlay test -->
+			<chat-block from="user" style="position: relative;">
+				<pre class="input ai-prompt">/</pre>
+				<div class="slash-suggestions" style="display: flex !important; position: static; margin-top: 6px;">
+					<div class="slash-suggestion-item">
+						<span class="slash-suggestion-name">/api-key</span>
+						<span class="slash-suggestion-desc">Configure API key for current provider</span>
+					</div>
+					<div class="slash-suggestion-item active">
+						<span class="slash-suggestion-name">/clear</span>
+						<span class="slash-suggestion-desc">Clear terminal screen history</span>
+					</div>
+					<div class="slash-suggestion-item">
+						<span class="slash-suggestion-name">/exit</span>
+						<span class="slash-suggestion-desc">Close current window</span>
+					</div>
+					<div class="slash-suggestion-item">
+						<span class="slash-suggestion-name">/help</span>
+						<span class="slash-suggestion-desc">Show list of available commands</span>
+					</div>
+				</div>
+			</chat-block>
+			
+			<!-- Section 3: User AI Prompt -->
+			<chat-block from="user">
+				<pre class="input ai-prompt">How does the agent loop execute shell commands?</pre>
+			</chat-block>
+			
+			<!-- Section 4: Assistant Reasoning + Sparkle Message -->
+			<chat-block from="assistant">
+				<details class="thinking-details" open>
+					<summary>Reasoning Process</summary>
+					<pre class="thinking-content">1. The user is asking about the agent loop's command execution flow.
+2. In main.js, runAgentLoop handles tool calls.
+3. Specifically, if tool call name is 'execute_command', it calls session.writeCommand().
+4. session.writeCommand sends the command to the stdin of a spawned bash process.
+5. It also appends a delimiter echo "__NONO_CMD_END__ $? $PWD" to capture exit code and new cwd.
+6. The stdout/stderr data listeners parse the output and send it to renderer via IPC.</pre>
+				</details>
+				
+				<pre class="input msg">The agent loop executes commands through a persistent shell session. Here is a high-level summary of the process:
+
+1. **Tool Invocation**: The AI agent decides to call the `execute_command` tool.
+2. **IPC Communication**: The command is dispatched to the main Electron process.
+3. **Shell Write**: The `ShellSession` class writes the command to the spawned bash process's `stdin`.
+4. **Delimiter Tracking**: It appends a delimiter command to capture the exit code and updated working directory.
+5. **Output Streaming**: `stdout` and `stderr` streams are captured and sent in real time back to the UI.</pre>
+			</chat-block>
+			
+			<!-- Section 5: Tool usage and Diffs -->
+			<chat-block from="assistant">
+				<pre class="input" data-tool-call-id="debug-tool-1">Editing window/style.css</pre>
+				<pre class="output"><span class="diff-context"> body {
+-	background-color: rgba(25, 25, 25, 0.94);
++	background-color: rgba(20, 20, 20, 0.95);
+ 	color: var(--gray-light);
+ 	font-family: 'Consolas', monospace;</span></pre>
+				<div class="output-placeholder">[5 lines of output]</div>
+			</chat-block>
+			
+		</terminal-chat>
+
+		<div class="debug-toast" id="debug-toast">Mode changed</div>
+
+		<script>
+			// Set collapse modes
+			function setMode(mode) {
+				const container = document.getElementById('terminal-chat-container');
+				container.className = 'mode-' + mode;
+				
+				// Update active buttons
+				document.querySelectorAll('.btn-debug').forEach(btn => {
+					if (btn.id === 'btn-' + mode) {
+						btn.classList.add('active');
+					} else if (btn.id !== 'btn-exit-debug') {
+						btn.classList.remove('active');
+					}
+				});
+
+				// Show toast
+				const toast = document.getElementById('debug-toast');
+				toast.textContent = 'Mode: ' + mode.toUpperCase();
+				toast.style.display = 'block';
+				// Make toast visible
+				toast.style.animation = 'none';
+				toast.offsetHeight; // trigger reflow
+				toast.style.animation = null;
+			}
+
+			// Back to terminal
+			document.getElementById('btn-exit-debug').addEventListener('click', () => {
+				window.api.toggleDebugMode();
+			});
+
+			// Setup output placeholder click behavior matching window.js
+			document.querySelectorAll('.output-placeholder').forEach(placeholder => {
+				placeholder.addEventListener('click', () => {
+					const output_elem = placeholder.previousElementSibling;
+					if (output_elem.style.display === 'block' || output_elem.style.display === '') {
+						output_elem.style.setProperty('display', 'none', 'important');
+					} else {
+						output_elem.style.setProperty('display', 'block', 'important');
+					}
+				});
+			});
+		</script>
+	</body>
+</html>

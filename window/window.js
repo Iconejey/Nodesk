@@ -407,6 +407,16 @@ document.addEventListener('keydown', (e) => {
 
 // Setup initial listeners
 window.addEventListener('DOMContentLoaded', () => {
+  // Focus the input when clicking the background
+  document.addEventListener('click', (e) => {
+    if (window.getSelection().toString() !== '') return;
+    if (e.target.closest('a, button, summary, details, .output-placeholder, [contenteditable="true"]')) return;
+    const active_input = document.getElementById('active-input');
+    if (active_input) {
+      placeCaretAtEnd(active_input);
+    }
+  });
+
   const active_input = document.getElementById('active-input');
   if (active_input) {
     setupInputListeners(active_input);

@@ -222,7 +222,7 @@ function appendNewPromptBlock(cwd) {
 	chat_block.id = 'active-chat-block';
 
 	const pre_input = document.createElement('pre');
-	pre_input.className = 'input';
+	pre_input.className = 'input chat-marker';
 	pre_input.id = 'active-input';
 	pre_input.setAttribute('contenteditable', 'true');
 	pre_input.setAttribute('spellcheck', 'false');
@@ -516,6 +516,7 @@ window.api.onAgentChunk(info => {
 			active_thinking_details.setAttribute('open', 'true');
 
 			const summary = document.createElement('summary');
+			summary.className = 'chat-marker';
 			summary.textContent = 'Reasoning Process';
 
 			active_thinking_content = document.createElement('pre');
@@ -552,7 +553,7 @@ window.api.onAgentToolStart(info => {
 	if (info.name === 'execute_command') {
 		// Show command as an input block
 		const pre_input = document.createElement('pre');
-		pre_input.className = 'input';
+		pre_input.className = 'input chat-marker';
 		pre_input.textContent = info.args.command;
 
 		const pre_output = document.createElement('pre');
@@ -566,7 +567,7 @@ window.api.onAgentToolStart(info => {
 	} else {
 		// Other tools (e.g. read_file, edit_file) shown as tool status lines
 		const pre_status = document.createElement('pre');
-		pre_status.className = 'input';
+		pre_status.className = 'input chat-marker';
 		pre_status.dataset.toolCallId = info.tool_call_id;
 
 		let label = '';

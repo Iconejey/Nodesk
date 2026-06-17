@@ -139,7 +139,7 @@
 			
 			<!-- Section 1: User command and output -->
 			<chat-block from="user">
-				<pre class="input">git status</pre>
+				<pre class="input chat-marker">git status</pre>
 				<pre class="output">On branch main
 Your branch is up to date with 'origin/main'.
 
@@ -155,7 +155,7 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 			
 			<!-- Section 2: User AI Prompt with Suggestions overlay test -->
 			<chat-block from="user" style="position: relative;">
-				<pre class="input ai-prompt">/</pre>
+				<pre class="input ai-prompt chat-marker">/</pre>
 				<div class="slash-suggestions" style="display: flex !important; position: static; margin-top: 6px;">
 					<div class="slash-suggestion-item">
 						<span class="slash-suggestion-name">/api-key</span>
@@ -178,13 +178,13 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 			
 			<!-- Section 3: User AI Prompt -->
 			<chat-block from="user">
-				<pre class="input ai-prompt">How does the agent loop execute shell commands?</pre>
+				<pre class="input ai-prompt chat-marker">How does the agent loop execute shell commands?</pre>
 			</chat-block>
 			
 			<!-- Section 4: Assistant Reasoning + Sparkle Message -->
 			<chat-block from="assistant">
 				<details class="thinking-details" open>
-					<summary>Reasoning Process</summary>
+					<summary class="chat-marker">Reasoning Process</summary>
 					<pre class="thinking-content">1. The user is asking about the agent loop's command execution flow.
 2. In main.js, runAgentLoop handles tool calls.
 3. Specifically, if tool call name is 'execute_command', it calls session.writeCommand().
@@ -193,7 +193,7 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 6. The stdout/stderr data listeners parse the output and send it to renderer via IPC.</pre>
 				</details>
 				
-				<pre class="input msg">The agent loop executes commands through a persistent shell session. Here is a high-level summary of the process:
+				<pre class="input msg chat-marker">The agent loop executes commands through a persistent shell session. Here is a high-level summary of the process:
 
 1. **Tool Invocation**: The AI agent decides to call the `execute_command` tool.
 2. **IPC Communication**: The command is dispatched to the main Electron process.
@@ -204,7 +204,7 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 			
 			<!-- Section 5: Tool usage and Diffs -->
 			<chat-block from="assistant">
-				<pre class="input" data-tool-call-id="debug-tool-1">Editing window/style.css</pre>
+				<pre class="input chat-marker" data-tool-call-id="debug-tool-1">Editing window/style.css</pre>
 				<pre class="output"><span class="diff-context"> body {
 -	background-color: rgba(25, 25, 25, 0.94);
 +	background-color: rgba(20, 20, 20, 0.95);

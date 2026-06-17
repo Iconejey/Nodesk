@@ -64,14 +64,17 @@ terminal-chat {
 		}
 
 		&[from='user'] pre.input::before {
-			content: 'chevron_right';
+			content: 'arrow_forward';
 			font-family: 'Material Symbols Outlined';
 			color: var(--green);
 			font-size: 1.1em;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 1.2em;
+			height: 1.2em;
+			margin-right: 8px;
 			vertical-align: -0.2em;
-			transform: translateX(-15%);
-			margin-right: 4px;
-			display: inline-block;
 			font-weight: normal;
 			font-style: normal;
 			line-height: 1;
@@ -89,15 +92,21 @@ terminal-chat {
 
 		&[from='assistant'] pre.input {
 			&::before {
-				content: '• ';
+				content: '•';
 				color: var(--purple);
+				display: inline-flex;
+				align-items: center;
+				justify-content: center;
+				width: 1.2em;
+				height: 1.2em;
+				margin-right: 8px;
 			}
 
 			&.msg {
 				color: var(--purple);
 
 				&::before {
-					content: '✦ ';
+					content: '✦';
 				}
 			}
 		}
@@ -243,7 +252,7 @@ terminal-chat {
 
 /* Collapsible thinking process block */
 details.thinking-details {
-	margin-bottom: 1rem;
+	margin-bottom: 0.5rem;
 
 	& summary {
 		color: var(--gray);
@@ -260,9 +269,13 @@ details.thinking-details {
 			content: 'arrow_right';
 			font-family: 'Material Symbols Outlined';
 			font-size: 1.1em;
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			width: 1.2em;
+			height: 1.2em;
+			margin-right: 8px;
 			vertical-align: -0.2em;
-			margin-right: 4px;
-			display: inline-block;
 			font-weight: normal;
 			font-style: normal;
 			line-height: 1;

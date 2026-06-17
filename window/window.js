@@ -11,7 +11,8 @@ const slash_commands = [
 	{ name: '/model', description: 'Get or set chat completion model' },
 	{ name: '/models', description: 'List available models from provider' },
 	{ name: '/provider', description: 'View or set API provider and base URL' },
-	{ name: '/providers', description: 'List all registered API providers' }
+	{ name: '/providers', description: 'List all registered API providers' },
+	{ name: '/shortcuts', description: 'List available keyboard shortcuts with descriptions' }
 ];
 
 let selected_suggestion_index = 0;
@@ -159,6 +160,18 @@ function parseThinkingAndContent(text) {
 	}
 
 	return { thinking, content };
+}
+
+function updateThinkingSummary(details, content) {
+	const summary = details.querySelector('summary');
+	if (!summary) return;
+	const lines = content.textContent.split('\n');
+	const line_count = lines.length;
+	if (details.open) {
+		summary.textContent = 'Reasoning Process';
+	} else {
+		summary.textContent = `Reasoning Process (${line_count} line${line_count === 1 ? '' : 's'})`;
+	}
 }
 
 // Helper to count lines and create a collapse placeholder
@@ -352,7 +365,26 @@ function submitInput(text) {
   /model [model]  - Set or view completing model (e.g. gpt-4o-mini)
   /models         - List available models from the current provider
   /provider       - View or set active API provider and custom base URL
-  /providers      - List all registered API providers`;
+  /providers      - List all registered API providers
+  /shortcuts      - List available keyboard shortcuts with descriptions`;
+
+			active_block.appendChild(out_pre);
+			appendNewPromptBlock();
+			return;
+		} else if (trimmed.startsWith('/shortcuts')) {
+			// Print shortcuts locally
+			const container = document.getElementById('terminal-chat-container');
+			const active_block = document.getElementById('active-chat-block');
+
+			const out_pre = document.createElement('pre');
+			out_pre.className = 'output';
+			out_pre.textContent = `Available keyboard shortcuts:
+  Ctrl+R (Cmd+R)        - Reload window
+  Ctrl+Shift+I (Cmd+..) - Toggle Developer Tools
+  Ctrl+Shift+D (Cmd+..) - Toggle Style Debug Mode
+  Ctrl+H (Cmd+H)        - Cycle collapse modes (Full, Collapsed, Last-Only, User)
+  Ctrl+C (Cmd+C)        - Interrupt active command execution (when no text selected)
+  Arrow Up / Down       - Navigate input command history`;
 
 			active_block.appendChild(out_pre);
 			appendNewPromptBlock();
@@ -490,9 +522,14 @@ window.api.onAgentChunk(info => {
 			active_thinking_details.appendChild(summary);
 			active_thinking_details.appendChild(active_thinking_content);
 
+			active_thinking_details.addEventListener('toggle', () => {
+				updateThinkingSummary(active_thinking_details, active_thinking_content);
+			});
+
 			active_assistant_block.insertBefore(active_thinking_details, active_message_content);
 		}
 		active_thinking_content.textContent = parsed.thinking;
+		updateThinkingSummary(active_thinking_details, active_thinking_content);
 	}
 
 	if (parsed.content) {

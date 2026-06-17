@@ -258,6 +258,27 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 					}
 				});
 			});
+
+			function updateThinkingSummary(details) {
+				const summary = details.querySelector('summary');
+				const content = details.querySelector('.thinking-content');
+				if (!summary || !content) return;
+				const lines = content.textContent.split('\n');
+				const line_count = lines.length;
+				if (details.open) {
+					summary.textContent = 'Reasoning Process';
+				} else {
+					summary.textContent = `Reasoning Process (${line_count} line${line_count === 1 ? '' : 's'})`;
+				}
+			}
+
+			// Setup thinking details listeners matching window.js
+			document.querySelectorAll('.thinking-details').forEach(details => {
+				updateThinkingSummary(details);
+				details.addEventListener('toggle', () => {
+					updateThinkingSummary(details);
+				});
+			});
 		</script>
 	</body>
 </html>

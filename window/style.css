@@ -153,6 +153,18 @@ terminal-chat.mode-last chat-block:last-child pre.output {
 terminal-chat.mode-last chat-block:last-child .output-placeholder {
 	display: none !important;
 }
+terminal-chat.mode-user chat-block[from='assistant'] pre.output {
+	display: none !important;
+}
+terminal-chat.mode-user chat-block[from='assistant'] .output-placeholder {
+	display: block !important;
+}
+terminal-chat.mode-user chat-block[from='user'] pre.output {
+	display: block !important;
+}
+terminal-chat.mode-user chat-block[from='user'] .output-placeholder {
+	display: none !important;
+}
 terminal-chat.mode-full .output-placeholder {
 	display: none !important;
 }

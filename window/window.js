@@ -24,18 +24,12 @@ let active_thinking_details = null;
 let active_thinking_content = null;
 let active_message_content = null;
 
+let available_commands = new Set();
+
 // Heuristic to detect if input represents a shell command vs AI prompt
 function isShellCommand(text) {
   const trimmed = text.trim();
   if (!trimmed) return true;
-
-  const known_binaries = [
-    'cd', 'ls', 'git', 'npm', 'node', 'python', 'pip', 'cat', 'mkdir', 'rm',
-    'cp', 'mv', 'touch', 'grep', 'find', 'curl', 'wget', 'chmod', 'chown',
-    'ssh', 'docker', 'docker-compose', 'make', 'gcc', 'g++', 'cargo', 'go',
-    'echo', 'export', 'unset', 'env', 'source', 'alias', 'which', 'pwd',
-    'clear', 'history', 'sudo', 'apt', 'yum', 'pacman', 'dnf', 'systemctl'
-  ];
 
   const first_word = trimmed.split(/\s+/)[0];
 
@@ -43,7 +37,7 @@ function isShellCommand(text) {
     return true;
   }
 
-  if (known_binaries.includes(first_word)) {
+  if (available_commands.has(first_word)) {
     return true;
   }
 
@@ -53,6 +47,7 @@ function isShellCommand(text) {
 
   return false;
 }
+
 
 // Set caret position to end of contenteditable
 function placeCaretAtEnd(el) {
@@ -428,7 +423,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
 window.api.onWindowInit((info) => {
   console.log('Window initialized:', info);
-  // Optional: print help or welcome
+  if (info.availableCommands) {
+    available_commands = new Set(info.availableCommands);
+  }
 });
 
 window.api.onShellOutput((data) => {

@@ -81,6 +81,47 @@ function getApiKey() {
 	return config.providers[config.current_provider]?.api_key || '';
 }
 
+let cached_commands = null;
+
+function getAvailableCommands() {
+	if (cached_commands) {
+		return cached_commands;
+	}
+
+	const commands = new Set();
+	const shell_builtins = ['cd', 'echo', 'eval', 'exec', 'exit', 'export', 'read', 'set', 'unset', 'alias', 'unalias', 'pushd', 'popd', 'dirs', 'history', 'history-list', 'source', 'bg', 'fg', 'jobs', 'type', 'which', 'pwd'];
+	shell_builtins.forEach(cmd => commands.add(cmd));
+
+	const path_env = process.env.PATH || '';
+	const directories = path_env.split(path.delimiter);
+
+	for (const dir of directories) {
+		try {
+			if (fs.existsSync(dir)) {
+				const files = fs.readdirSync(dir);
+				for (const file of files) {
+					const full_path = path.join(dir, file);
+					try {
+						const stat = fs.statSync(full_path);
+						if (stat.isFile()) {
+							const is_executable = (stat.mode & 0o111) !== 0;
+							if (is_executable) {
+								commands.add(file);
+							}
+						}
+					} catch (err) {
+						// Ignore broken symlinks
+					}
+				}
+			}
+		} catch (err) {
+			// Ignore read errors
+		}
+	}
+
+	return Array.from(commands);
+}
+
 // Shell Session class to handle spawning and parsing
 class ShellSession {
 	constructor(web_contents, initial_cwd) {
@@ -709,7 +750,8 @@ function createWindow(initial_cwd) {
 			cwd: cwd,
 			model: session.model,
 			apiKeyConfigured: !!getApiKey(),
-			repoMap: repo_map
+			repoMap: repo_map,
+			availableCommands: getAvailableCommands()
 		});
 	});
 
@@ -923,7 +965,8 @@ ipcMain.on('request-state', event => {
 			cwd: data.session.current_cwd,
 			model: data.session.model,
 			apiKeyConfigured: !!getApiKey(),
-			repoMap: generateRepoMap(data.session.current_cwd)
+			repoMap: generateRepoMap(data.session.current_cwd),
+			availableCommands: getAvailableCommands()
 		});
 	}
 });

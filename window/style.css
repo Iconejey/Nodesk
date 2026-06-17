@@ -135,38 +135,59 @@ body:hover ::-webkit-scrollbar-thumb {
 }
 
 /* Collapse mode support */
-terminal-chat.mode-collapsed chat-block pre.output {
-	display: none !important;
-}
-terminal-chat.mode-collapsed chat-block .output-placeholder {
-	display: block !important;
-}
-terminal-chat.mode-last chat-block:not(:last-child) pre.output {
-	display: none !important;
-}
-terminal-chat.mode-last chat-block:not(:last-child) .output-placeholder {
-	display: block !important;
-}
-terminal-chat.mode-last chat-block:last-child pre.output {
-	display: block !important;
-}
-terminal-chat.mode-last chat-block:last-child .output-placeholder {
-	display: none !important;
-}
-terminal-chat.mode-user chat-block[from='assistant'] pre.output {
-	display: none !important;
-}
-terminal-chat.mode-user chat-block[from='assistant'] .output-placeholder {
-	display: block !important;
-}
-terminal-chat.mode-user chat-block[from='user'] pre.output {
-	display: block !important;
-}
-terminal-chat.mode-user chat-block[from='user'] .output-placeholder {
-	display: none !important;
-}
-terminal-chat.mode-full .output-placeholder {
-	display: none !important;
+terminal-chat {
+	&.mode-collapsed chat-block {
+		& pre.output {
+			display: none !important;
+		}
+		& .output-placeholder {
+			display: block !important;
+		}
+	}
+
+	&.mode-last chat-block {
+		&:not(:last-child) {
+			& pre.output {
+				display: none !important;
+			}
+			& .output-placeholder {
+				display: block !important;
+			}
+		}
+
+		&:last-child {
+			& pre.output {
+				display: block !important;
+			}
+			& .output-placeholder {
+				display: none !important;
+			}
+		}
+	}
+
+	&.mode-user chat-block {
+		&[from='assistant'] {
+			& pre.output {
+				display: none !important;
+			}
+			& .output-placeholder {
+				display: block !important;
+			}
+		}
+
+		&[from='user'] {
+			& pre.output {
+				display: block !important;
+			}
+			& .output-placeholder {
+				display: none !important;
+			}
+		}
+
+		&.mode-full .output-placeholder {
+			display: none !important;
+		}
+	}
 }
 
 .output-placeholder {
@@ -181,24 +202,17 @@ terminal-chat.mode-full .output-placeholder {
 	cursor: pointer;
 	user-select: none;
 	display: none;
-}
 
-.output-placeholder:hover {
-	background-color: var(--charcoal-light);
-	color: var(--gray-light);
+	&:hover {
+		background-color: var(--charcoal-light);
+		color: var(--gray-light);
+	}
 }
 
 /* Suggestion box styles */
 .slash-suggestions {
-	/* background-color: var(--black-soft); */
-	/* border: 1px solid var(--charcoal-light);
-	border-radius: 4px;
-	margin-top: 6px;
-	max-height: 160px;
-	overflow-y: auto; */
 	display: none;
 	flex-direction: column;
-	/* width: calc(100% - 20px); */
 }
 
 .slash-suggestion-item {
@@ -209,11 +223,11 @@ terminal-chat.mode-full .output-placeholder {
 	align-items: center;
 	font-family: 'Consolas', monospace;
 	font-size: 0.9em;
-}
 
-.slash-suggestion-item.active {
-	background-color: var(--charcoal-light);
-	color: var(--white);
+	&.active {
+		background-color: var(--charcoal-light);
+		color: var(--white);
+	}
 }
 
 .slash-suggestion-name {
@@ -229,31 +243,49 @@ terminal-chat.mode-full .output-placeholder {
 
 /* Collapsible thinking process block */
 details.thinking-details {
-	background-color: var(--charcoal-dark);
-	border: 1px solid var(--charcoal-light);
-	border-radius: 4px;
-	padding: 8px 12px;
-	margin-bottom: 8px;
-	font-size: 0.9em;
-}
+	margin-bottom: 1rem;
 
-details.thinking-details[open] {
-	border-color: var(--purple);
-}
+	& summary {
+		color: var(--gray);
+		cursor: pointer;
+		outline: none;
+		user-select: none;
+		list-style: none;
 
-details.thinking-details summary {
-	cursor: pointer;
-	outline: none;
-	user-select: none;
-	font-weight: bold;
-	color: var(--purple);
-}
+		&::-webkit-details-marker {
+			display: none;
+		}
 
-details.thinking-details pre.thinking-content {
-	margin-top: 6px;
-	margin-bottom: 0;
-	white-space: pre-wrap;
-	color: var(--gray-light);
+		&::before {
+			content: 'arrow_right';
+			font-family: 'Material Symbols Outlined';
+			font-size: 1.1em;
+			vertical-align: -0.2em;
+			margin-right: 4px;
+			display: inline-block;
+			font-weight: normal;
+			font-style: normal;
+			line-height: 1;
+			text-transform: none;
+			letter-spacing: normal;
+			word-wrap: normal;
+			white-space: nowrap;
+			direction: ltr;
+			-webkit-font-smoothing: antialiased;
+			transition: transform 0.2s ease;
+		}
+	}
+
+	&[open] summary::before {
+		transform: rotate(90deg);
+	}
+
+	& pre.thinking-content {
+		margin-top: 6px;
+		margin-bottom: 0;
+		white-space: pre-wrap;
+		color: var(--gray);
+	}
 }
 
 /* Diff formatting classes */

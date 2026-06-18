@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   sendUserCommand: (command) => ipcRenderer.send('run-user-command', command),
-  sendAgentPrompt: (prompt) => ipcRenderer.send('run-agent-prompt', prompt),
+  sendAgentPrompt: (prompt, usePro) => ipcRenderer.send('run-agent-prompt', prompt, usePro),
   sendInterrupt: () => ipcRenderer.send('shell-interrupt'),
   onShellOutput: (callback) => ipcRenderer.on('shell-output', (event, data) => callback(data)),
   onShellComplete: (callback) => ipcRenderer.on('shell-complete', (event, info) => callback(info)),

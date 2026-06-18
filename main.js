@@ -6,79 +6,56 @@ const os = require('os');
 const { OpenAI } = require('openai');
 
 const active_windows = new Map();
-const config_path = path.join(os.homedir(), '.nono-terminal-config.json');
 
-const default_config = {
-	current_provider: 'openai',
-	providers: {
-		openai: {
-			base_url: 'https://api.openai.com/v1',
-			api_key: '',
-			model: 'gpt-4o-mini'
-		},
-		gemini: {
-			base_url: 'https://generativelanguage.googleapis.com/v1beta/openai/',
-			api_key: '',
-			model: 'gemini-2.5-flash'
-		}
+function getProviderBaseUrl(provider) {
+	if (!provider) return undefined;
+	const lower = provider.toLowerCase();
+	if (lower === 'openai') {
+		return 'https://api.openai.com/v1';
 	}
-};
-
-function loadConfig() {
-	if (process.env.OPENAI_API_KEY) {
-		return {
-			current_provider: 'openai',
-			providers: {
-				...default_config.providers,
-				openai: {
-					base_url: 'https://api.openai.com/v1',
-					api_key: process.env.OPENAI_API_KEY,
-					model: 'gpt-4o-mini'
-				}
-			}
-		};
+	if (lower === 'gemini') {
+		return 'https://generativelanguage.googleapis.com/v1beta/openai/';
 	}
-	try {
-		if (fs.existsSync(config_path)) {
-			const config_data = JSON.parse(fs.readFileSync(config_path, 'utf8'));
-			const legacy_key = config_data.openai_api_key || '';
-			const providers = { ...default_config.providers };
-
-			if (legacy_key) {
-				providers.openai.api_key = legacy_key;
-				providers.gemini.api_key = legacy_key;
-			}
-
-			if (config_data.providers) {
-				for (const [name, info] of Object.entries(config_data.providers)) {
-					providers[name] = { ...providers[name], ...info };
-				}
-			}
-
-			return {
-				current_provider: config_data.current_provider || (legacy_key ? 'gemini' : 'openai'),
-				providers
-			};
-		}
-	} catch (err) {
-		console.error('Error loading config:', err.message);
+	if (provider.startsWith('http://') || provider.startsWith('https://')) {
+		return provider;
 	}
-	return default_config;
+	return undefined;
 }
 
-function saveConfig(config_data) {
+function loadConfig() {
+	const default_config_path = path.join(__dirname, 'default_config.json');
+	const config_path = path.join(__dirname, 'config.json');
+
+	let config = {
+		flash: { provider: 'gemini', api_key: '', model: 'gemini-2.5-flash' },
+		pro: { provider: 'openai', api_key: '', model: 'gpt-4o' }
+	};
+
 	try {
-		fs.writeFileSync(config_path, JSON.stringify(config_data, null, 2), 'utf8');
-		return true;
+		if (fs.existsSync(default_config_path)) {
+			const defaults = JSON.parse(fs.readFileSync(default_config_path, 'utf8'));
+			config = { ...config, ...defaults };
+		}
 	} catch (err) {
-		console.error('Error saving config:', err.message);
-		return false;
+		console.error('Error loading default_config.json:', err.message);
 	}
+
+	try {
+		if (fs.existsSync(config_path)) {
+			const overrides = JSON.parse(fs.readFileSync(config_path, 'utf8'));
+			config.flash = { ...config.flash, ...overrides.flash };
+			config.pro = { ...config.pro, ...overrides.pro };
+		}
+	} catch (err) {
+		console.error('Error loading config.json:', err.message);
+	}
+
+	return config;
 }
 
 function getApiKey() {
 	const config = loadConfig();
-	return config.providers[config.current_provider]?.api_key || '';
+	return config.flash?.api_key || config.pro?.api_key || '';
 }
 
 let cached_commands = null;
@@ -131,8 +108,7 @@ class ShellSession {
 		this.stderr_buffer = '';
 		this.active_command_callback = null;
 		const config = loadConfig();
-		const active_prov = config.providers[config.current_provider] || {};
-		this.model = active_prov.model || 'gpt-4o-mini';
+		this.model = config.flash?.model || 'gemini-2.5-flash';
 		this.messages = [];
 
 		this.shell_proc = spawn('/bin/bash', [], {
@@ -555,12 +531,15 @@ const tools_definition = [
 ];
 
 // Agent execution loop
-async function runAgentLoop(session, prompt) {
+async function runAgentLoop(session, prompt, usePro) {
 	const web_contents = session.web_contents;
-	const api_key = getApiKey();
-	if (!api_key) {
+	const config = loadConfig();
+	const config_tier = usePro ? config.pro : config.flash;
+	const tier_name = usePro ? 'pro' : 'flash';
+
+	if (!config_tier || !config_tier.api_key) {
 		web_contents.send('agent-chunk', {
-			text: 'Error: OpenAI API Key is not configured. Please use `/api-key <key>` or set the `OPENAI_API_KEY` environment variable.'
+			text: `Error: API Key is not configured for the '${tier_name}' tier in config.json / default_config.json.`
 		});
 		web_contents.send('agent-complete');
 		return;
@@ -576,11 +555,9 @@ async function runAgentLoop(session, prompt) {
 	let consecutive_errors = 0;
 
 	try {
-		const config = loadConfig();
-		const active_prov = config.providers[config.current_provider] || {};
 		const openai = new OpenAI({
-			apiKey: active_prov.api_key || 'none',
-			baseURL: active_prov.base_url || undefined
+			apiKey: config_tier.api_key,
+			baseURL: getProviderBaseUrl(config_tier.provider)
 		});
 		let loop_count = 0;
 		const max_loops = 15;
@@ -600,7 +577,7 @@ async function runAgentLoop(session, prompt) {
 			const response = await callOpenAiWithRetry(signal =>
 				openai.chat.completions.create(
 					{
-						model: session.model || 'gpt-4o-mini',
+						model: config_tier.model,
 						messages: session.messages,
 						tools: tools_definition
 					},
@@ -812,10 +789,10 @@ ipcMain.on('run-user-command', (event, command) => {
 	}
 });
 
-ipcMain.on('run-agent-prompt', (event, prompt) => {
+ipcMain.on('run-agent-prompt', (event, prompt, usePro) => {
 	const data = active_windows.get(event.sender.id);
 	if (data) {
-		runAgentLoop(data.session, prompt);
+		runAgentLoop(data.session, prompt, usePro);
 	}
 });
 
@@ -842,129 +819,12 @@ ipcMain.on('execute-slash-command', async (event, command_str) => {
 		}
 		// Renderer handles UI clearing
 		event.sender.send('shell-complete', { exit_code: 0, cwd: data.session.current_cwd });
-	} else if (command_name === '/provider' || command_name === '/providers') {
-		const provider_name = args[1];
-		const base_url = args[2];
-		const api_key = args[3];
-
-		const config = loadConfig();
-
-		if (!provider_name) {
-			let output = `Current provider: **${config.current_provider}**\n\nRegistered providers:\n`;
-			for (const [name, info] of Object.entries(config.providers)) {
-				output += `- **${name}**: ${info.base_url} (model: ${info.model || 'not set'})\n`;
-			}
-			event.sender.send('shell-output', { text: output, is_stderr: false });
-		} else {
-			if (!config.providers[provider_name]) {
-				config.providers[provider_name] = {
-					base_url: base_url || 'https://api.openai.com/v1',
-					api_key: api_key || '',
-					model: 'gpt-4o-mini'
-				};
-			} else {
-				if (base_url) config.providers[provider_name].base_url = base_url;
-				if (api_key) config.providers[provider_name].api_key = api_key;
-			}
-			config.current_provider = provider_name;
-			saveConfig(config);
-
-			const prov_info = config.providers[provider_name];
-			data.session.model = prov_info.model || 'gpt-4o-mini';
-
-			event.sender.send('shell-output', {
-				text: `Active provider changed to **${provider_name}** (${prov_info.base_url})\n`,
-				is_stderr: false
-			});
-		}
-		event.sender.send('shell-complete', { exit_code: 0, cwd: data.session.current_cwd });
-	} else if (command_name === '/model') {
-		const target_model = args[1];
-		const config = loadConfig();
-		const active_prov_name = config.current_provider;
-
-		if (target_model) {
-			if (config.providers[active_prov_name]) {
-				config.providers[active_prov_name].model = target_model;
-			}
-			data.session.model = target_model;
-			saveConfig(config);
-			event.sender.send('shell-output', {
-				text: `Model successfully changed to **${target_model}** for provider **${active_prov_name}**.\n`,
-				is_stderr: false
-			});
-		} else {
-			const current_model = data.session.model || config.providers[active_prov_name]?.model || 'gpt-4o-mini';
-			event.sender.send('shell-output', {
-				text: `Current model is **${current_model}** (provider: **${active_prov_name}**)\n`,
-				is_stderr: false
-			});
-		}
-		event.sender.send('shell-complete', { exit_code: 0, cwd: data.session.current_cwd });
-	} else if (command_name === '/models') {
-		const config = loadConfig();
-		const active_prov_name = config.current_provider;
-		const active_prov = config.providers[active_prov_name] || {};
-		const api_key = active_prov.api_key || 'none';
-		const base_url = active_prov.base_url || undefined;
-
+	} else if (['/provider', '/providers', '/model', '/models', '/api-key'].includes(command_name)) {
 		event.sender.send('shell-output', {
-			text: `Fetching models from provider **${active_prov_name}**...\n`,
-			is_stderr: false
+			text: `Slash command ${command_name} is deprecated. Configuration is now managed via config.json.\n`,
+			is_stderr: true
 		});
-
-		try {
-			const openai = new OpenAI({
-				apiKey: api_key,
-				baseURL: base_url
-			});
-
-			const models_list = await callOpenAiWithRetry(signal => openai.models.list({ signal }));
-
-			let output = `Available models for **${active_prov_name}**:\n`;
-			const sorted_models = models_list.data.map(m => m.id).sort();
-			sorted_models.forEach(model_id => {
-				output += `- ${model_id}\n`;
-			});
-			event.sender.send('shell-output', { text: output, is_stderr: false });
-			event.sender.send('shell-complete', { exit_code: 0, cwd: data.session.current_cwd });
-		} catch (err) {
-			event.sender.send('shell-output', {
-				text: `Failed to fetch models: ${err.message}\n`,
-				is_stderr: true
-			});
-			event.sender.send('shell-complete', { exit_code: 1, cwd: data.session.current_cwd });
-		}
-	} else if (command_name === '/api-key') {
-		const key = args[1];
-		const config = loadConfig();
-		const active_prov = config.current_provider;
-
-		if (key) {
-			if (!config.providers[active_prov]) {
-				config.providers[active_prov] = { base_url: '', api_key: '', model: '' };
-			}
-			config.providers[active_prov].api_key = key;
-			const success = saveConfig(config);
-			if (success) {
-				event.sender.send('shell-output', {
-					text: `API key saved successfully for provider **${active_prov}**.\n`,
-					is_stderr: false
-				});
-			} else {
-				event.sender.send('shell-output', {
-					text: `Failed to save API key.\n`,
-					is_stderr: true
-				});
-			}
-		} else {
-			const current_key = config.providers[active_prov]?.api_key || '';
-			event.sender.send('shell-output', {
-				text: current_key ? `API key is configured for provider **${active_prov}**.\n` : `No API key is configured for provider **${active_prov}**.\n`,
-				is_stderr: false
-			});
-		}
-		event.sender.send('shell-complete', { exit_code: 0, cwd: data.session.current_cwd });
+		event.sender.send('shell-complete', { exit_code: 1, cwd: data.session.current_cwd });
 	} else {
 		event.sender.send('shell-output', {
 			text: `Unknown slash command: ${command_name}\n`,

@@ -4,14 +4,9 @@ let history_index = -1;
 let temp_input_text = '';
 
 const slash_commands = [
-	{ name: '/api-key', description: 'Configure API key for current provider' },
 	{ name: '/clear', description: 'Clear terminal screen history' },
 	{ name: '/exit', description: 'Close current window' },
 	{ name: '/help', description: 'Show list of available commands' },
-	{ name: '/model', description: 'Get or set chat completion model' },
-	{ name: '/models', description: 'List available models from provider' },
-	{ name: '/provider', description: 'View or set API provider and base URL' },
-	{ name: '/providers', description: 'List all registered API providers' },
 	{ name: '/shortcuts', description: 'List available keyboard shortcuts with descriptions' }
 ];
 
@@ -318,14 +313,14 @@ function setupInputListeners(input_elem) {
 				}
 			} else if (e.key === 'Enter') {
 				e.preventDefault();
-				submitInput(input_elem.textContent);
+				submitInput(input_elem.textContent, e.ctrlKey && e.shiftKey);
 			}
 		}
 	});
 }
 
 // Submit prompt or command
-function submitInput(text) {
+function submitInput(text, usePro = false) {
 	const trimmed = text.replace(/\xa0/g, ' ').trim();
 	if (!trimmed) return;
 
@@ -354,14 +349,9 @@ function submitInput(text) {
 			const out_pre = document.createElement('pre');
 			out_pre.className = 'output';
 			out_pre.textContent = `Available slash commands:
-  /api-key <key>  - Configure and save API key for current provider
   /clear          - Clear terminal screen history
   /exit           - Close current window
   /help           - Print this help message
-  /model [model]  - Set or view completing model (e.g. gpt-4o-mini)
-  /models         - List available models from the current provider
-  /provider       - View or set active API provider and custom base URL
-  /providers      - List all registered API providers
   /shortcuts      - List available keyboard shortcuts with descriptions`;
 
 			active_block.appendChild(out_pre);
@@ -381,6 +371,7 @@ function submitInput(text) {
   Ctrl+H (Cmd+H)        - Cycle collapse modes (Full, Collapsed, Last-Only, User)
   Ctrl+L (Cmd+L)        - Clear terminal screen history
   Ctrl+C (Cmd+C)        - Interrupt active command execution (when no text selected)
+  Ctrl+Shift+Enter      - Submit AI prompt using the 'pro' tier model config
   Arrow Up / Down       - Navigate input command history`;
 
 			active_block.appendChild(out_pre);
@@ -426,7 +417,7 @@ function submitInput(text) {
 		window.scrollTo(0, document.body.scrollHeight);
 
 		// Send to agent loop
-		window.api.sendAgentPrompt(trimmed);
+		window.api.sendAgentPrompt(trimmed, usePro);
 	}
 }
 
@@ -647,6 +638,10 @@ window.api.onAgentToolComplete(info => {
 });
 
 window.api.onAgentComplete(() => {
+	console.log('AI Response:', {
+		raw: active_assistant_text,
+		parsed: parseThinkingAndContent(active_assistant_text)
+	});
 	if (active_assistant_block && active_message_content) {
 		active_message_content.classList.remove('waiting');
 		if (!active_message_content.textContent && !active_thinking_details) {

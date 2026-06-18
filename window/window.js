@@ -617,6 +617,32 @@ window.addEventListener("DOMContentLoaded", () => {
     }
   });
 
+  // Handle markdown file links on click
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a");
+    if (link) {
+      const href = link.getAttribute("href");
+      if (href && href.startsWith("file:")) {
+        e.preventDefault();
+        const filePath = href.substring(5); // Remove 'file:' prefix
+        let resolvedPath = filePath;
+        if (!filePath.startsWith("/") && workspace_root) {
+          resolvedPath = workspace_root + "/" + filePath;
+        }
+        const useVsCode = e.ctrlKey || e.metaKey;
+        if (useVsCode) {
+          window.api.openInVsCode(resolvedPath).then((result) => {
+            if (result.error) {
+              alert("Failed to open in VS Code: " + result.error);
+            }
+          });
+        } else {
+          openEditor(resolvedPath);
+        }
+      }
+    }
+  });
+
   const active_input = document.getElementById("active-input");
   if (active_input) {
     setupInputListeners(active_input);

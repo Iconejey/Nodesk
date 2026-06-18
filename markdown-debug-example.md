@@ -115,3 +115,17 @@ When building systems of this scale, always remember:
 - Always enforce **idempotency** key validation at the consumer layer using an inline lookup strategy like `await cache.get(idempotency_key)`.
 - Keep network footprints light by using binary protocols like **gRPC** or **Protobuf** instead of heavy JSON over HTTP/1.1 where appropriate.
 - For more design patterns and reference implementations, check out the resources at https://microservices.io and the [CNCF Landscape](https://landscape.cncf.io).
+
+---
+
+## 6. Project Reference Links (Debug Section)
+
+For system administrators and developers working directly within Nono-Terminal, you can jump directly to the configuration or source files using the following workspace shortcuts:
+
+- Main Application Controller: [main.js](file:main.js)
+- UI Renderer logic: [window.js](file:window/window.js)
+- Styling stylesheet: [style.css](file:window/style.css)
+- Project Package Manifest: [package.json](file:package.json)
+
+> [!TIP]
+> Click any link above to open it in Nono-Terminal's inline editor. Hold **Ctrl** (or **Cmd**) and click to open it directly in VS Code!

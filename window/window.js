@@ -520,9 +520,6 @@ window.api.onAgentChunk(info => {
 		active_assistant_text = '';
 		active_thinking_details = null;
 		active_thinking_content = null;
-	} else if (active_message_content && active_message_content.classList.contains('waiting')) {
-		active_message_content.classList.remove('waiting');
-		active_message_content.textContent = '';
 	}
 
 	active_assistant_text += info.text;
@@ -558,13 +555,24 @@ window.api.onAgentChunk(info => {
 
 	active_message_content.textContent = parsed.content;
 
+	// Automatically collapse reasoning/thinking block when real content starts coming
+	if (parsed.content && active_thinking_details && active_thinking_details.open && !active_thinking_details.dataset.collapsedAutomatically) {
+		active_thinking_details.open = false;
+		active_thinking_details.dataset.collapsedAutomatically = 'true';
+	}
+
 	window.scrollTo(0, document.body.scrollHeight);
 });
 
 window.api.onAgentToolStart(info => {
-	// Clear any active streamed response blocks
-	if (active_assistant_block && active_message_content && active_message_content.classList.contains('waiting')) {
-		active_assistant_block.remove();
+	// Stop waiting state of current assistant message segment
+	if (active_assistant_block && active_message_content) {
+		if (active_message_content.classList.contains('waiting')) {
+			active_message_content.classList.remove('waiting');
+		}
+		if (!active_message_content.textContent && !active_thinking_details) {
+			active_assistant_block.remove();
+		}
 	}
 	active_assistant_block = null;
 
@@ -639,8 +647,11 @@ window.api.onAgentToolComplete(info => {
 });
 
 window.api.onAgentComplete(() => {
-	if (active_assistant_block && active_message_content && active_message_content.classList.contains('waiting')) {
-		active_assistant_block.remove();
+	if (active_assistant_block && active_message_content) {
+		active_message_content.classList.remove('waiting');
+		if (!active_message_content.textContent && !active_thinking_details) {
+			active_assistant_block.remove();
+		}
 	}
 	active_assistant_block = null;
 	appendNewPromptBlock();

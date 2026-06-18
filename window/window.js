@@ -582,6 +582,25 @@ document.addEventListener("keydown", (e) => {
 
 // Setup initial listeners
 window.addEventListener("DOMContentLoaded", () => {
+  if (window.marked) {
+    window.marked.use({
+      walkTokens(token) {
+        if (token.type === "code") {
+          const lang = token.lang ? token.lang.toLowerCase() : "";
+          if (["ts", "typescript", "tsx"].includes(lang)) {
+            token.lang = "javascript";
+          } else if (["sh", "shell"].includes(lang)) {
+            token.lang = "bash";
+          } else if (
+            ["go", "rust", "c", "cpp", "csharp", "java", "clike"].includes(lang)
+          ) {
+            token.lang = "clike";
+          }
+        }
+      },
+    });
+  }
+
   // Focus the input when clicking the background
   document.addEventListener("click", (e) => {
     if (active_editor_file_path) return;

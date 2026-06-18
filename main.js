@@ -199,6 +199,28 @@ function listDirectory(dir_path) {
 	}
 }
 
+function getVsCodePrettierConfig() {
+	try {
+		const homedir = os.homedir();
+		const settingsPath = path.join(homedir, '.config', 'Code', 'User', 'settings.json');
+		if (fs.existsSync(settingsPath)) {
+			const content = fs.readFileSync(settingsPath, 'utf8');
+			const cleanJson = content.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+			const settings = JSON.parse(cleanJson);
+			const prettierConfig = {};
+			for (const key in settings) {
+				if (key.startsWith('prettier.')) {
+					prettierConfig[key.substring(9)] = settings[key];
+				}
+			}
+			return prettierConfig;
+		}
+	} catch (err) {
+		console.error('Failed to load VS Code settings for Prettier:', err.message);
+	}
+	return {};
+}
+
 function readFile(file_path, start_line, end_line) {
 	try {
 		const content = fs.readFileSync(file_path, 'utf8');
@@ -885,9 +907,11 @@ ipcMain.handle('save-file-content', async (event, file_path, content) => {
 			const prettier = require('prettier');
 			const fileInfo = await prettier.getFileInfo(resolved);
 			if (fileInfo && !fileInfo.ignored && fileInfo.inferredParser) {
-				const config = await prettier.resolveConfig(resolved);
+				const vscodeConfig = getVsCodePrettierConfig();
+				const projectConfig = await prettier.resolveConfig(resolved);
 				formattedContent = await prettier.format(content, {
-					...config,
+					...vscodeConfig,
+					...projectConfig,
 					parser: fileInfo.inferredParser
 				});
 				formatted = true;

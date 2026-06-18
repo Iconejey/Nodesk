@@ -10,9 +10,10 @@ let jar = null;
 
 const slash_commands = [
 	{ name: '/clear', description: 'Clear terminal screen history' },
+	{ name: '/code', description: 'Open file in VS Code' },
 	{ name: '/exit', description: 'Close current window' },
 	{ name: '/help', description: 'Show list of available commands' },
-	{ name: '/open', description: 'Open directory explorer or edit file' },
+	{ name: '/open', description: 'Open a file in the inline editor' },
 	{ name: '/shortcuts', description: 'List available keyboard shortcuts with descriptions' }
 ];
 
@@ -265,9 +266,10 @@ function setupInputListeners(input_elem) {
 		}
 
 		// Handle slash suggestions
-		if (text.startsWith('/open')) {
-			const query = text.substring(5).trim();
-			handleOpenSuggestions(query);
+		if (text.startsWith('/open') || text.startsWith('/code')) {
+			const cmdPrefix = text.startsWith('/open') ? '/open' : '/code';
+			const query = text.substring(cmdPrefix.length).trim();
+			handleOpenSuggestions(query, cmdPrefix);
 		} else if (text.startsWith('/') && !text.includes(' ')) {
 			const filtered = getFilteredSuggestions(text.split(/\s+/)[0]);
 			selected_suggestion_index = 0;
@@ -300,7 +302,9 @@ function setupInputListeners(input_elem) {
 					const isDir = active_item.getAttribute('data-is-dir') === 'true';
 					const isCommand = cmd_name.startsWith('/');
 					
-					const suggestionCompletedText = isCommand ? cmd_name : ('/open ' + cmd_name);
+					const active_suggestion = active_suggestions[selected_suggestion_index];
+					const cmdPrefix = (active_suggestion && active_suggestion.cmdPrefix) ? active_suggestion.cmdPrefix : '/open';
+					const suggestionCompletedText = isCommand ? cmd_name : (cmdPrefix + ' ' + cmd_name);
 					const currentInputText = input_elem.textContent.trim();
 					
 					if (e.key === 'Enter' && !isDir && currentInputText === suggestionCompletedText) {
@@ -309,7 +313,7 @@ function setupInputListeners(input_elem) {
 						return;
 					}
 					
-					input_elem.textContent = isCommand ? (cmd_name + ' ') : ('/open ' + cmd_name + (isDir ? '/' : ' '));
+					input_elem.textContent = isCommand ? (cmd_name + ' ') : (cmdPrefix + ' ' + cmd_name + (isDir ? '/' : ' '));
 					placeCaretAtEnd(input_elem);
 					hideSuggestions();
 					// Dispatch input event to refresh suggestions
@@ -382,9 +386,10 @@ function submitInput(text, usePro = false) {
 			out_pre.className = 'output';
 			out_pre.textContent = `Available slash commands:
   /clear          - Clear terminal screen history
+  /code [path]    - Open file in VS Code
   /exit           - Close current window
   /help           - Print this help message
-  /open [path]    - Show directory files explorer or open a file to edit
+  /open [path]    - Open a file in the inline editor
   /shortcuts      - List available keyboard shortcuts with descriptions`;
 
 			active_block.appendChild(out_pre);
@@ -393,6 +398,10 @@ function submitInput(text, usePro = false) {
 		} else if (trimmed.startsWith('/open')) {
 			const pathArg = trimmed.substring(5).trim();
 			handleOpenCommand(pathArg);
+			return;
+		} else if (trimmed.startsWith('/code')) {
+			const pathArg = trimmed.substring(5).trim();
+			handleCodeCommand(pathArg);
 			return;
 		} else if (trimmed.startsWith('/shortcuts')) {
 			// Print shortcuts locally
@@ -738,7 +747,7 @@ window.api.onAgentComplete(() => {
 });
 
 // Interactive File Explorer & Code Editor Helpers
-async function handleOpenSuggestions(query) {
+async function handleOpenSuggestions(query, commandName) {
 	// Parse folder and file prefix from query
 	let dirPath = '.';
 	let filePrefix = query;
@@ -773,7 +782,8 @@ async function handleOpenSuggestions(query) {
 			return {
 				name: pathPrefix + item.name,
 				description: item.is_directory ? 'Directory' : formatBytes(item.size),
-				isDir: item.is_directory
+				isDir: item.is_directory,
+				cmdPrefix: commandName
 			};
 		});
 		
@@ -787,6 +797,16 @@ async function handleOpenSuggestions(query) {
 async function handleOpenCommand(pathArg) {
 	if (!pathArg) return;
 	openEditor(pathArg);
+	appendNewPromptBlock(current_cwd);
+}
+
+async function handleCodeCommand(pathArg) {
+	if (!pathArg) return;
+	appendNewPromptBlock(current_cwd);
+	const result = await window.api.openInVsCode(pathArg);
+	if (result.error) {
+		alert('Failed to open VS Code: ' + result.error);
+	}
 }
 
 function formatBytes(bytes) {

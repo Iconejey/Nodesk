@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('api', {
   requestState: () => ipcRenderer.send('request-state'),
   readDir: (dirPath) => ipcRenderer.invoke('read-dir', dirPath),
   readFileContent: (filePath) => ipcRenderer.invoke('read-file-content', filePath),
-  saveFileContent: (filePath, content) => ipcRenderer.invoke('save-file-content', filePath, content)
+  saveFileContent: (filePath, content) => ipcRenderer.invoke('save-file-content', filePath, content),
+  openInVsCode: (filePath) => ipcRenderer.invoke('open-in-vs-code', filePath)
 });
 

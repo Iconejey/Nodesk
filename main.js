@@ -858,9 +858,7 @@ ipcMain.handle('read-dir', async (event, dir_path) => {
 	const base = data ? data.session.current_cwd : process.cwd();
 	const resolved = path.resolve(base, dir_path || '.');
 	const res = listDirectory(resolved);
-	if (res.error) {
-		return { resolved, error: res.error, code: res.code };
-	}
+	if (res.error) return { resolved, error: res.error, code: res.code };
 	return { resolved, items: res };
 });
 
@@ -888,3 +886,14 @@ ipcMain.handle('save-file-content', async (event, file_path, content) => {
 	}
 });
 
+ipcMain.handle('open-in-vs-code', async (event, file_path) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	const resolved = path.resolve(base, file_path);
+	return new Promise(resolve => {
+		exec(`code "${resolved}"`, err => {
+			if (err) resolve({ error: err.message });
+			else resolve({ success: true });
+		});
+	});
+});

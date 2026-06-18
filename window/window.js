@@ -1099,6 +1099,11 @@ async function openEditor(filePath) {
   else if (["md", "markdown"].includes(ext)) lang = "markdown";
 
   editorCode.className = "editor-code language-" + lang;
+  if (lang === "markdown") {
+    editorCode.classList.add("editor-wrap");
+  } else {
+    editorCode.classList.remove("editor-wrap");
+  }
 
   if (jar) {
     jar.updateCode(result.content);

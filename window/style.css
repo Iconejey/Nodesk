@@ -613,8 +613,15 @@ body.editor-active terminal-chat {
 	tab-size: 4;
 	-moz-tab-size: 4;
 	caret-color: var(--purple);
-	white-space: pre;
-	word-wrap: normal;
+	white-space: pre !important;
+	word-wrap: normal !important;
+	overflow-x: auto !important;
+}
+
+.editor-code.editor-wrap {
+	white-space: pre-wrap !important;
+	word-wrap: break-word !important;
+	overflow-x: hidden !important;
 }
 
 /* Prism Syntax Highlighting Styles */

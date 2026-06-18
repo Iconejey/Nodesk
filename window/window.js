@@ -31,6 +31,9 @@ let available_commands = new Set();
 
 // Heuristic to detect if input represents a shell command vs AI prompt
 function isShellCommand(text) {
+	if (text.includes('\n')) {
+		return false;
+	}
 	const trimmed = text.trim();
 	if (!trimmed) return true;
 
@@ -282,6 +285,12 @@ function setupInputListeners(input_elem) {
 	});
 
 	input_elem.addEventListener('keydown', e => {
+		if (e.key === 'Enter' && e.ctrlKey && !e.shiftKey) {
+			e.preventDefault();
+			document.execCommand('insertText', false, '\n');
+			return;
+		}
+
 		const suggestions_elem = document.getElementById('slash-suggestions');
 		const suggestions_visible = suggestions_elem && suggestions_elem.style.display === 'flex';
 
@@ -417,6 +426,7 @@ function submitInput(text, usePro = false) {
   Ctrl+H (Cmd+H)        - Cycle collapse modes (Full, Collapsed, Last-Only, User)
   Ctrl+L (Cmd+L)        - Clear terminal screen history
   Ctrl+C (Cmd+C)        - Interrupt active command execution (when no text selected)
+  Ctrl+Enter            - Insert line break in prompt (forces AI prompt mode)
   Ctrl+Shift+Enter      - Submit AI prompt using the 'pro' tier model config
   Arrow Up / Down       - Navigate input command history`;
 
@@ -436,7 +446,7 @@ function submitInput(text, usePro = false) {
 	}
 
 	// Check if AI Prompt or Shell Command
-	if (isShellCommand(trimmed)) {
+	if (isShellCommand(text)) {
 		const active_block = document.getElementById('active-chat-block');
 		active_output_block = document.createElement('pre');
 		active_output_block.className = 'output';

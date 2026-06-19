@@ -293,9 +293,9 @@ function startMobileServer() {
           return;
         }
         const isUntracked = stdout.startsWith("??");
-        let diffCmd = `git diff HEAD -- "${resolved}"`;
+        let diffCmd = `git diff HEAD -U999999 -- "${resolved}"`;
         if (isUntracked) {
-          diffCmd = `git diff --no-index -- /dev/null "${resolved}"`;
+          diffCmd = `git diff --no-index -U999999 -- /dev/null "${resolved}"`;
         }
         exec(diffCmd, { cwd: base }, (diffErr, diffStdout, diffStderr) => {
           if (diffErr && diffErr.code !== 1 && diffErr.code !== 0) {
@@ -1549,9 +1549,9 @@ ipcMain.handle("read-file-diff", async (event, filePath) => {
         return;
       }
       const isUntracked = stdout.startsWith("??");
-      let diffCmd = `git diff HEAD -- "${resolved}"`;
+      let diffCmd = `git diff HEAD -U999999 -- "${resolved}"`;
       if (isUntracked) {
-        diffCmd = `git diff --no-index -- /dev/null "${resolved}"`;
+        diffCmd = `git diff --no-index -U999999 -- /dev/null "${resolved}"`;
       }
       exec(diffCmd, { cwd: base }, (diffErr, diffStdout, diffStderr) => {
         if (diffErr && diffErr.code !== 1 && diffErr.code !== 0) {

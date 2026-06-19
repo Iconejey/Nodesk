@@ -363,12 +363,18 @@ terminal-chat {
 .slash-suggestion-name {
 	color: var(--purple);
 	font-weight: bold;
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 
 .slash-suggestion-desc {
 	color: var(--gray);
 	margin-left: 10px;
 	font-size: 0.95em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: right;
 }
 
 /* Chat marker icon common styles */

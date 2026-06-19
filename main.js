@@ -50,15 +50,25 @@ function startMobileServer() {
   io_server.on("connection", (socket) => {
     let joinedRoom = null;
     
+    const getWindowData = (windowId) => {
+      const wId = parseInt(windowId, 10);
+      let data = active_windows.get(wId);
+      if (!data && active_windows.size > 0) {
+        const firstKey = active_windows.keys().next().value;
+        data = active_windows.get(firstKey);
+      }
+      return data;
+    };
+    
     socket.on("register", async ({ windowId }) => {
       if (windowId) {
-        joinedRoom = `window_${windowId}`;
-        socket.join(joinedRoom);
-        console.log(`Socket client joined room: ${joinedRoom}`);
-        
-        const wId = parseInt(windowId, 10);
-        const data = active_windows.get(wId);
+        const data = getWindowData(windowId);
         if (data) {
+          const actualWindowId = data.win.webContents.id;
+          joinedRoom = `window_${actualWindowId}`;
+          socket.join(joinedRoom);
+          console.log(`Socket client joined room: ${joinedRoom} (requested: ${windowId})`);
+          
           let historyHtml = "";
           try {
             historyHtml = await data.win.webContents.executeJavaScript(`
@@ -74,6 +84,7 @@ function startMobileServer() {
             console.error("Failed to retrieve history HTML on register:", err);
           }
           socket.emit("window-init", {
+            windowId: actualWindowId,
             cwd: data.session.current_cwd,
             model: data.session.model,
             apiKeyConfigured: !!getApiKey(),
@@ -86,42 +97,43 @@ function startMobileServer() {
     });
     
     socket.on("run-user-command", ({ windowId, command }) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       if (data) {
-        sendToWindow(wId, "shell-command-start", { command });
+        const actualId = data.win.webContents.id;
+        sendToWindow(actualId, "shell-command-start", { command });
         data.session.writeCommand(command, (info) => {
-          sendToWindow(wId, "shell-complete", info);
+          sendToWindow(actualId, "shell-complete", info);
         });
       }
     });
     
     socket.on("run-agent-prompt", ({ windowId, prompt, usePro }) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       if (data) {
-        sendToWindow(wId, "agent-prompt-start", { prompt, usePro });
+        const actualId = data.win.webContents.id;
+        sendToWindow(actualId, "agent-prompt-start", { prompt, usePro });
         runAgentLoop(data.session, prompt, usePro);
       }
     });
     
     socket.on("shell-interrupt", ({ windowId }) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       if (data) {
         data.session.interrupt();
       }
     });
     
     socket.on("execute-slash-command", ({ windowId, command }) => {
-      const wId = parseInt(windowId, 10);
-      executeSlashCommandForWindow(wId, command);
+      const data = getWindowData(windowId);
+      if (data) {
+        executeSlashCommandForWindow(data.win.webContents.id, command);
+      }
     });
     
     socket.on("request-state", async ({ windowId }) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       if (data) {
+        const actualWindowId = data.win.webContents.id;
         let historyHtml = "";
         try {
           historyHtml = await data.win.webContents.executeJavaScript(`
@@ -137,6 +149,7 @@ function startMobileServer() {
           console.error("Failed to retrieve history HTML on request-state:", err);
         }
         socket.emit("window-init", {
+          windowId: actualWindowId,
           cwd: data.session.current_cwd,
           model: data.session.model,
           apiKeyConfigured: !!getApiKey(),
@@ -148,16 +161,14 @@ function startMobileServer() {
     });
     
     socket.on("toggle-debug-mode", ({ windowId }) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       if (data) {
         toggleDebugMode(data.win);
       }
     });
     
     socket.on("read-dir", ({ windowId, dirPath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       const resolved = path.resolve(base, dirPath || ".");
       const res = listDirectory(resolved);
@@ -169,8 +180,7 @@ function startMobileServer() {
     });
     
     socket.on("read-file-content", ({ windowId, filePath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       const resolved = path.resolve(base, filePath);
       try {
@@ -182,8 +192,7 @@ function startMobileServer() {
     });
     
     socket.on("save-file-content", async ({ windowId, filePath, content }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       const resolved = path.resolve(base, filePath);
       try {
@@ -213,8 +222,7 @@ function startMobileServer() {
     });
     
     socket.on("open-in-vs-code", ({ windowId, filePath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       const resolved = path.resolve(base, filePath);
       exec(`code "${resolved}"`, (err) => {
@@ -224,8 +232,7 @@ function startMobileServer() {
     });
     
     socket.on("read-git-status", async ({ windowId }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       exec("git status --porcelain", { cwd: base }, (err, stdout, stderr) => {
         if (err && err.code !== 0) {
@@ -263,8 +270,7 @@ function startMobileServer() {
     });
 
     socket.on("git-stage-file", ({ windowId, filePath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       exec(`git add "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
         if (err) callback({ error: stderr || err.message });
@@ -273,8 +279,7 @@ function startMobileServer() {
     });
 
     socket.on("git-unstage-file", ({ windowId, filePath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       exec(`git reset HEAD "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
         if (err) callback({ error: stderr || err.message });
@@ -283,8 +288,7 @@ function startMobileServer() {
     });
 
     socket.on("read-file-diff", ({ windowId, filePath }, callback) => {
-      const wId = parseInt(windowId, 10);
-      const data = active_windows.get(wId);
+      const data = getWindowData(windowId);
       const base = data ? data.session.current_cwd : process.cwd();
       const resolved = path.resolve(base, filePath);
       exec(`git status --porcelain -- "${resolved}"`, { cwd: base }, (err, stdout, stderr) => {

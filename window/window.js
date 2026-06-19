@@ -749,6 +749,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
 window.api.onWindowInit(info => {
 	console.log('Window initialized:', info);
+	if (info.windowId) {
+		window.api.windowId = info.windowId;
+	}
 	if (info.availableCommands) {
 		available_commands = new Set(info.availableCommands);
 	}

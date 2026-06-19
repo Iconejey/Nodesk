@@ -99,7 +99,9 @@
 					s.src = '/socket.io/socket.io.js';
 					s.onload = () => {
 						const socket = io();
-						socket.emit('register', { windowId: window.api.windowId });
+						socket.on('connect', () => {
+							socket.emit('register', { windowId: window.api.windowId });
+						});
 						socketResolve(socket);
 					};
 					document.head.appendChild(s);

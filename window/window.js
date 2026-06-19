@@ -12,6 +12,7 @@ let editor_mode = 'edit';
 let editor_file_lang = 'clike';
 let is_dirty = false;
 let is_loading_file = false;
+let opened_from_changes = false;
 
 // Register custom diff language for Prism if not present
 if (window.Prism && !window.Prism.languages.diff) {
@@ -1088,7 +1089,7 @@ function formatBytes(bytes) {
 	return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-async function openEditor(filePath) {
+async function openEditor(filePath, fromChanges = false) {
 	const editorCode = document.getElementById('editor-code');
 	const lineNumbers = document.getElementById('editor-line-numbers');
 	const pathSpan = document.getElementById('editor-file-path');
@@ -1097,6 +1098,7 @@ async function openEditor(filePath) {
 	editor_mode = 'edit';
 	is_dirty = false;
 	is_loading_file = true;
+	opened_from_changes = fromChanges;
 
 	window.editorDiffState = {
 		added: new Set(),
@@ -1224,6 +1226,11 @@ function closeEditor() {
 	const activeInput = document.getElementById('active-input');
 	if (activeInput) {
 		activeInput.focus();
+	}
+
+	if (opened_from_changes) {
+		opened_from_changes = false;
+		openDiffOverlay();
 	}
 }
 
@@ -1494,7 +1501,7 @@ async function loadDiffOverlayContent(container) {
 			link.addEventListener('click', e => {
 				e.preventDefault();
 				closeDiffOverlay();
-				openEditor(file.path);
+				openEditor(file.path, true);
 			});
 
 			const btn = document.createElement('button');
@@ -1541,7 +1548,7 @@ async function loadDiffOverlayContent(container) {
 			link.addEventListener('click', e => {
 				e.preventDefault();
 				closeDiffOverlay();
-				openEditor(file.path);
+				openEditor(file.path, true);
 			});
 
 			const btn = document.createElement('button');

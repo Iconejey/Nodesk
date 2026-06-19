@@ -819,3 +819,219 @@ body.mobile-active .mobile-modal {
 	color: var(--blue-light);
 	text-decoration: underline;
 }
+
+/* Git Diff Overlay styling */
+.diff-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: transparent;
+	z-index: 10000;
+	font-size: 17px;
+	display: flex;
+	flex-direction: column;
+	opacity: 0;
+	pointer-events: none;
+	font-family: 'Consolas', monospace;
+	transition: opacity 0.3s ease;
+}
+
+body.diff-active .diff-overlay {
+	opacity: 1;
+	pointer-events: all;
+}
+
+body.diff-active terminal-chat {
+	display: none !important;
+}
+
+.diff-header {
+	border-bottom: 1px solid color-mix(in srgb, var(--white) 8%, transparent);
+	padding: 12px 20px;
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	user-select: none;
+}
+
+.diff-title-area {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	overflow: hidden;
+	margin-right: 15px;
+}
+
+.diff-icon {
+	color: var(--blue-soft);
+	font-size: 1.4em;
+}
+
+.diff-title {
+	color: var(--white);
+	font-weight: bold;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.diff-actions {
+	display: flex;
+	gap: 10px;
+	flex-shrink: 0;
+}
+
+.btn-diff {
+	background: transparent;
+	border: 1px solid color-mix(in srgb, var(--white) 12%, transparent);
+	color: var(--gray-light);
+	padding: 6px 14px;
+	border-radius: 6px;
+	cursor: pointer;
+	font-family: inherit;
+	font-size: 0.9em;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	transition: all 0.2s ease;
+}
+
+.btn-diff:hover {
+	background: color-mix(in srgb, var(--white) 8%, transparent);
+	border-color: var(--gray-light);
+	color: var(--white);
+}
+
+.btn-diff.btn-close:hover {
+	background: color-mix(in srgb, var(--red) 15%, transparent);
+	border-color: var(--red);
+	color: var(--red);
+}
+
+.diff-body {
+	flex: 1;
+	background: color-mix(in srgb, var(--black-soft) 30%, transparent);
+	padding: 24px;
+	overflow-y: auto;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 24px;
+}
+
+.diff-section {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+.diff-section-header {
+	font-weight: bold;
+	color: var(--white);
+	font-size: 0.95em;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	border-bottom: 1px solid color-mix(in srgb, var(--white) 8%, transparent);
+	padding-bottom: 8px;
+}
+
+.diff-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.diff-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 12px;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--white) 2%, transparent);
+	border: 1px solid color-mix(in srgb, var(--white) 4%, transparent);
+	transition: all 0.2s ease;
+}
+
+.diff-item:hover {
+	background: color-mix(in srgb, var(--white) 4%, transparent);
+	border-color: color-mix(in srgb, var(--white) 8%, transparent);
+}
+
+.diff-file-link {
+	cursor: pointer;
+	flex-grow: 1;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	text-decoration: none;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: 0.95em;
+}
+
+.diff-file-link:hover {
+	text-decoration: underline;
+}
+
+.diff-file-link.addition {
+	color: var(--green);
+}
+
+.diff-file-link.edit {
+	color: var(--blue-soft);
+}
+
+.diff-file-link.deletion {
+	color: var(--red);
+}
+
+.diff-item-btn {
+	background: transparent;
+	border: 1px solid color-mix(in srgb, var(--white) 15%, transparent);
+	color: var(--gray-light);
+	cursor: pointer;
+	border-radius: 6px;
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: bold;
+	font-size: 1.1em;
+	transition: all 0.2s ease;
+}
+
+.diff-item-btn:hover {
+	background-color: color-mix(in srgb, var(--white) 8%, transparent);
+	border-color: var(--gray-light);
+}
+
+.diff-item-btn.stage {
+	color: var(--green);
+	border-color: color-mix(in srgb, var(--green) 30%, transparent);
+}
+
+.diff-item-btn.stage:hover {
+	background-color: color-mix(in srgb, var(--green) 12%, transparent);
+	border-color: var(--green);
+}
+
+.diff-item-btn.unstage {
+	color: var(--red);
+	border-color: color-mix(in srgb, var(--red) 30%, transparent);
+}
+
+.diff-item-btn.unstage:hover {
+	background-color: color-mix(in srgb, var(--red) 12%, transparent);
+	border-color: var(--red);
+}
+
+.diff-empty-msg {
+	color: var(--gray);
+	font-size: 0.9em;
+	font-style: italic;
+	padding: 8px 12px;
+}

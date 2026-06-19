@@ -223,6 +223,65 @@ function startMobileServer() {
       });
     });
     
+    socket.on("read-git-status", async ({ windowId }, callback) => {
+      const wId = parseInt(windowId, 10);
+      const data = active_windows.get(wId);
+      const base = data ? data.session.current_cwd : process.cwd();
+      exec("git status --porcelain", { cwd: base }, (err, stdout, stderr) => {
+        if (err && err.code !== 0) {
+          callback({ error: stderr || err.message });
+          return;
+        }
+        const lines = stdout.split("\n");
+        const staged = [];
+        const unstaged = [];
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const x = line[0];
+          const y = line[1];
+          let filePath = line.substring(3).trim();
+          if (filePath.startsWith('"') && filePath.endsWith('"')) {
+            filePath = filePath.substring(1, filePath.length - 1);
+          }
+          if (x !== " " && x !== "?") {
+            let type = "edit";
+            if (x === "A") type = "addition";
+            else if (x === "D") type = "deletion";
+            staged.push({ path: filePath, type });
+          }
+          if (y !== " " && y !== undefined) {
+            let type = "edit";
+            if (y === "A" || x === "?") type = "addition";
+            else if (y === "D") type = "deletion";
+            unstaged.push({ path: filePath, type });
+          } else if (x === "?") {
+            unstaged.push({ path: filePath, type: "addition" });
+          }
+        }
+        callback({ staged, unstaged });
+      });
+    });
+
+    socket.on("git-stage-file", ({ windowId, filePath }, callback) => {
+      const wId = parseInt(windowId, 10);
+      const data = active_windows.get(wId);
+      const base = data ? data.session.current_cwd : process.cwd();
+      exec(`git add "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
+        if (err) callback({ error: stderr || err.message });
+        else callback({ success: true });
+      });
+    });
+
+    socket.on("git-unstage-file", ({ windowId, filePath }, callback) => {
+      const wId = parseInt(windowId, 10);
+      const data = active_windows.get(wId);
+      const base = data ? data.session.current_cwd : process.cwd();
+      exec(`git reset HEAD "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
+        if (err) callback({ error: stderr || err.message });
+        else callback({ success: true });
+      });
+    });
+
     socket.on("disconnect", () => {
       console.log("Socket client disconnected");
     });
@@ -1379,6 +1438,75 @@ ipcMain.handle("open-in-vs-code", async (event, file_path) => {
   return new Promise((resolve) => {
     exec(`code "${resolved}"`, (err) => {
       if (err) resolve({ error: err.message });
+      else resolve({ success: true });
+    });
+  });
+});
+
+ipcMain.handle("read-git-status", async (event) => {
+  const data = active_windows.get(event.sender.id);
+  const base = data ? data.session.current_cwd : process.cwd();
+  return new Promise((resolve) => {
+    exec("git status --porcelain", { cwd: base }, (err, stdout, stderr) => {
+      if (err && err.code !== 0) {
+        resolve({ error: stderr || err.message });
+        return;
+      }
+      
+      const lines = stdout.split("\n");
+      const staged = [];
+      const unstaged = [];
+      
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const x = line[0];
+        const y = line[1];
+        let filePath = line.substring(3).trim();
+        if (filePath.startsWith('"') && filePath.endsWith('"')) {
+          filePath = filePath.substring(1, filePath.length - 1);
+        }
+        
+        // Staged status (Index)
+        if (x !== " " && x !== "?") {
+          let type = "edit";
+          if (x === "A") type = "addition";
+          else if (x === "D") type = "deletion";
+          staged.push({ path: filePath, type });
+        }
+        
+        // Unstaged status (Worktree)
+        if (y !== " " && y !== undefined) {
+          let type = "edit";
+          if (y === "A" || x === "?") type = "addition";
+          else if (y === "D") type = "deletion";
+          unstaged.push({ path: filePath, type });
+        } else if (x === "?") {
+          unstaged.push({ path: filePath, type: "addition" });
+        }
+      }
+      
+      resolve({ staged, unstaged });
+    });
+  });
+});
+
+ipcMain.handle("git-stage-file", async (event, filePath) => {
+  const data = active_windows.get(event.sender.id);
+  const base = data ? data.session.current_cwd : process.cwd();
+  return new Promise((resolve) => {
+    exec(`git add "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
+      if (err) resolve({ error: stderr || err.message });
+      else resolve({ success: true });
+    });
+  });
+});
+
+ipcMain.handle("git-unstage-file", async (event, filePath) => {
+  const data = active_windows.get(event.sender.id);
+  const base = data ? data.session.current_cwd : process.cwd();
+  return new Promise((resolve) => {
+    exec(`git reset HEAD "${filePath}"`, { cwd: base }, (err, stdout, stderr) => {
+      if (err) resolve({ error: stderr || err.message });
       else resolve({ success: true });
     });
   });

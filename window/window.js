@@ -12,6 +12,10 @@ let jar = null;
 const slash_commands = [
   { name: "/clear", description: "Clear terminal screen history" },
   { name: "/code", description: "Open file in VS Code" },
+  {
+    name: "/changes",
+    description: "Show Git changed files categorized by staged/unstaged status",
+  },
   { name: "/exit", description: "Close current window" },
   { name: "/help", description: "Show list of available commands" },
   {
@@ -450,6 +454,7 @@ function submitInput(text, usePro = false) {
       const out_pre = document.createElement("pre");
       out_pre.className = "output";
       out_pre.textContent = `Available slash commands:
+  /changes        - Show Git changed files (staged and changes)
   /clear          - Clear terminal screen history
   /code [path]    - Open file in VS Code
   /exit           - Close current window
@@ -461,6 +466,10 @@ function submitInput(text, usePro = false) {
 
       active_block.appendChild(out_pre);
       appendNewPromptBlock();
+      return;
+    } else if (trimmed.startsWith("/changes")) {
+      openDiffOverlay();
+      appendNewPromptBlock(current_cwd);
       return;
     } else if (trimmed.startsWith("/open")) {
       const pathArg = trimmed.substring(5).trim();
@@ -559,6 +568,13 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       e.preventDefault();
       closeMobileModal();
+      return;
+    }
+  }
+  if (document.body.classList.contains("diff-active")) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeDiffOverlay();
       return;
     }
   }
@@ -697,6 +713,16 @@ window.addEventListener("DOMContentLoaded", () => {
   const mobileCloseBtn = document.getElementById("mobile-btn-close");
   if (mobileCloseBtn) {
     mobileCloseBtn.addEventListener("click", closeMobileModal);
+  }
+
+  const diffRefreshBtn = document.getElementById("diff-btn-refresh");
+  if (diffRefreshBtn) {
+    diffRefreshBtn.addEventListener("click", refreshDiffOverlay);
+  }
+
+  const diffCloseBtn = document.getElementById("diff-btn-close");
+  if (diffCloseBtn) {
+    diffCloseBtn.addEventListener("click", closeDiffOverlay);
   }
 
   // Request initial state on load/reload to restore session variables
@@ -1294,4 +1320,128 @@ function simulateAgentResponse(fullText) {
 
     window.scrollTo(0, document.body.scrollHeight);
   }, 15);
+}
+
+async function openDiffOverlay() {
+  document.body.classList.add("diff-active");
+  const diffBody = document.getElementById("diff-body");
+  if (diffBody) {
+    loadDiffOverlayContent(diffBody);
+  }
+}
+
+function closeDiffOverlay() {
+  document.body.classList.remove("diff-active");
+}
+
+function refreshDiffOverlay() {
+  const diffBody = document.getElementById("diff-body");
+  if (diffBody) {
+    loadDiffOverlayContent(diffBody);
+  }
+}
+
+async function loadDiffOverlayContent(container) {
+  container.innerHTML = `<div class="diff-empty-msg">Loading git changes...</div>`;
+  const status = await window.api.readGitStatus();
+  if (status.error) {
+    container.innerHTML = `<div class="diff-empty-msg" style="color: var(--red);">Error: ${status.error}</div>`;
+    return;
+  }
+
+  container.innerHTML = "";
+
+  // 1. Staged Section
+  const stagedSection = document.createElement("div");
+  stagedSection.className = "diff-section";
+  stagedSection.innerHTML = `<div class="diff-section-header">Staged Changes</div>`;
+  const stagedList = document.createElement("div");
+  stagedList.className = "diff-list";
+
+  if (status.staged.length === 0) {
+    stagedList.innerHTML = `<div class="diff-empty-msg">No staged changes</div>`;
+  } else {
+    status.staged.forEach(file => {
+      const item = document.createElement("div");
+      item.className = "diff-item";
+
+      const link = document.createElement("a");
+      link.className = `diff-file-link ${file.type}`;
+      link.textContent = file.path;
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        closeDiffOverlay();
+        openEditor(file.path);
+      });
+
+      const btn = document.createElement("button");
+      btn.className = "diff-item-btn unstage";
+      btn.textContent = "-";
+      btn.title = "Unstage file";
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        const res = await window.api.unstageFile(file.path);
+        if (res.error) {
+          alert("Failed to unstage: " + res.error);
+          btn.disabled = false;
+        } else {
+          loadDiffOverlayContent(container);
+        }
+      });
+
+      item.appendChild(link);
+      item.appendChild(btn);
+      stagedList.appendChild(item);
+    });
+  }
+  stagedSection.appendChild(stagedList);
+  container.appendChild(stagedSection);
+
+  // 2. Changes Section
+  const unstagedSection = document.createElement("div");
+  unstagedSection.className = "diff-section";
+  unstagedSection.innerHTML = `<div class="diff-section-header">Changes</div>`;
+  const unstagedList = document.createElement("div");
+  unstagedList.className = "diff-list";
+
+  if (status.unstaged.length === 0) {
+    unstagedList.innerHTML = `<div class="diff-empty-msg">No unstaged changes</div>`;
+  } else {
+    status.unstaged.forEach(file => {
+      const item = document.createElement("div");
+      item.className = "diff-item";
+
+      const link = document.createElement("a");
+      link.className = `diff-file-link ${file.type}`;
+      link.textContent = file.path;
+      link.addEventListener("click", (e) => {
+        e.preventDefault();
+        closeDiffOverlay();
+        openEditor(file.path);
+      });
+
+      const btn = document.createElement("button");
+      btn.className = "diff-item-btn stage";
+      btn.textContent = "+";
+      btn.title = "Stage file";
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        btn.disabled = true;
+        const res = await window.api.stageFile(file.path);
+        if (res.error) {
+          alert("Failed to stage: " + res.error);
+          btn.disabled = false;
+        } else {
+          loadDiffOverlayContent(container);
+        }
+      });
+
+      item.appendChild(link);
+      item.appendChild(btn);
+      unstagedList.appendChild(item);
+    });
+  }
+  unstagedSection.appendChild(unstagedList);
+  container.appendChild(unstagedSection);
 }

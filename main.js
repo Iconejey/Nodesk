@@ -410,7 +410,7 @@ async function executeSlashCommandForWindow(windowId, command_str) {
         cwd: data.session.current_cwd,
       });
     }
-  } else if (command_name === "/pin") {
+  } else if (command_name === "/add-pin") {
     let pin_path = args.slice(1).join(" ").trim();
     if (!pin_path) {
       pin_path = data.session.current_cwd;
@@ -1485,7 +1485,7 @@ function createWindow(initial_cwd) {
   win.loadFile("window/index.html");
 
   win.webContents.once("did-finish-load", () => {
-    const cwd = initial_cwd || process.cwd();
+    const cwd = os.homedir();
     const session = new ShellSession(win.webContents, cwd);
     active_windows.set(win.webContents.id, { win, session });
 

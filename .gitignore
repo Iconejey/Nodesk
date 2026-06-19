@@ -144,3 +144,4 @@ vite.config.ts.timestamp-*
 
 # Application custom config
 config.json
+pinned_directories.json

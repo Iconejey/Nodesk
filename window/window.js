@@ -40,12 +40,16 @@ const slash_commands = [
 	},
 	{ name: '/open', description: 'Open a file in the inline editor' },
 	{
-		name: '/pin',
+		name: '/add-pin',
 		description: 'Pin a directory to bookmarks (defaults to current directory if no path specified)'
 	},
 	{
 		name: '/pins',
-		description: 'Open the dedicated pinned directories view overlay'
+		description: 'Switch to a pinned directory (autocompletes pinned directories)'
+	},
+	{
+		name: '/unpin',
+		description: 'Unpin a directory (autocompletes pinned directories)'
 	},
 	{
 		name: '/shortcuts',
@@ -58,7 +62,6 @@ const slash_commands = [
 ];
 
 let selected_suggestion_index = 0;
-let is_startup_dir_selection = false;
 let current_collapse_mode = 'full'; // 'full', 'collapsed', 'last', 'user'
 
 let active_output_block = null;
@@ -157,21 +160,13 @@ function renderSuggestions(filtered) {
       <span class="slash-suggestion-desc">${cmd.description}</span>
     `;
 		item.addEventListener('click', () => {
-			if (is_startup_dir_selection) {
-				is_startup_dir_selection = false;
-				hideSuggestions();
-				const container = document.getElementById('terminal-chat-container');
-				container.innerHTML = '';
-				window.api.executeSlashCommand('/clear');
-				window.api.sendUserCommand(`cd "${cmd.path}"`);
-			} else {
-				const input = document.getElementById('active-input');
-				const isCommand = cmd.name.startsWith('/');
-				input.textContent = isCommand ? cmd.name + ' ' : '/open ' + cmd.name + (cmd.isDir ? '/' : ' ');
-				placeCaretAtEnd(input);
-				hideSuggestions();
-				input.dispatchEvent(new Event('input'));
-			}
+			const input = document.getElementById('active-input');
+			const isCommand = cmd.name.startsWith('/');
+			const prefix = cmd.cmdPrefix || '/open';
+			input.textContent = isCommand ? cmd.name + ' ' : prefix + ' ' + cmd.name + (cmd.isDir ? '/' : ' ');
+			placeCaretAtEnd(input);
+			hideSuggestions();
+			input.dispatchEvent(new Event('input'));
 		});
 		suggestions_elem.appendChild(item);
 	});
@@ -326,6 +321,12 @@ function setupInputListeners(input_elem) {
 			const cmdPrefix = text.startsWith('/open') ? '/open' : '/code';
 			const query = text.substring(cmdPrefix.length).trim();
 			handleOpenSuggestions(query, cmdPrefix);
+		} else if (text.startsWith('/pins')) {
+			const query = text.substring(5).trim();
+			handlePinsSuggestions(query, '/pins');
+		} else if (text.startsWith('/unpin')) {
+			const query = text.substring(6).trim();
+			handlePinsSuggestions(query, '/unpin');
 		} else if (text.startsWith('/') && !text.includes(' ')) {
 			const filtered = getFilteredSuggestions(text.split(/\s+/)[0]);
 			selected_suggestion_index = 0;
@@ -447,6 +448,7 @@ function submitInput(text, usePro = false) {
 			const out_pre = document.createElement('pre');
 			out_pre.className = 'output';
 			out_pre.textContent = `Available slash commands:
+  /add-pin [path] - Pin a directory (defaults to current dir)
   /changes        - Show Git changed files (staged and changes)
   /clear          - Clear terminal screen history
   /code [path]    - Open file in VS Code
@@ -454,8 +456,8 @@ function submitInput(text, usePro = false) {
   /help           - Print this help message
   /mobile         - Share the current terminal UI with a mobile device via QR code
   /open [path]    - Open a file in the inline editor
-  /pin [path]     - Pin a directory (defaults to current dir)
-  /pins           - Show pinned directories view
+  /pins [name]    - Switch to a pinned directory
+  /unpin [name]   - Unpin a directory
   /shortcuts      - List available keyboard shortcuts with descriptions
   /test-md        - Simulate AI responding with markdown-debug-example.md content`;
 
@@ -467,8 +469,89 @@ function submitInput(text, usePro = false) {
 			appendNewPromptBlock(current_cwd);
 			return;
 		} else if (trimmed.startsWith('/pins')) {
-			openPinsOverlay();
-			appendNewPromptBlock(current_cwd);
+			const arg = trimmed.substring(5).trim();
+			if (!arg) {
+				const container = document.getElementById('terminal-chat-container');
+				const active_block = document.getElementById('active-chat-block');
+
+				const out_pre = document.createElement('pre');
+				out_pre.className = 'output';
+				if (pinned_dirs_global.length === 0) {
+					out_pre.textContent = 'No pinned directories.';
+				} else {
+					out_pre.textContent = 'Pinned directories:\n' + pinned_dirs_global.map(dir => `  ${dir}`).join('\n');
+				}
+				active_block.appendChild(out_pre);
+				appendNewPromptBlock(current_cwd);
+				return;
+			}
+
+			const clean_arg = arg.replace(/[/\\]$/, '');
+			const match = pinned_dirs_global.find(dir => {
+				const parts = dir.split(/[/\\]/);
+				const dir_name = parts.pop() || parts.pop() || dir;
+				return dir_name.toLowerCase() === clean_arg.toLowerCase() || dir.toLowerCase() === clean_arg.toLowerCase();
+			});
+
+			if (match) {
+				window.api.sendUserCommand(`cd "${match}"`);
+			} else {
+				const container = document.getElementById('terminal-chat-container');
+				const active_block = document.getElementById('active-chat-block');
+
+				const out_pre = document.createElement('pre');
+				out_pre.className = 'output';
+				out_pre.textContent = `Error: No matching pinned directory found for "${arg}".`;
+				active_block.appendChild(out_pre);
+				appendNewPromptBlock(current_cwd);
+			}
+			return;
+		} else if (trimmed.startsWith('/unpin')) {
+			const arg = trimmed.substring(6).trim();
+			if (!arg) {
+				const container = document.getElementById('terminal-chat-container');
+				const active_block = document.getElementById('active-chat-block');
+
+				const out_pre = document.createElement('pre');
+				out_pre.className = 'output';
+				out_pre.textContent = 'Usage: /unpin <directory_name_or_path>';
+				active_block.appendChild(out_pre);
+				appendNewPromptBlock(current_cwd);
+				return;
+			}
+
+			const clean_arg = arg.replace(/[/\\]$/, '');
+			const match = pinned_dirs_global.find(dir => {
+				const parts = dir.split(/[/\\]/);
+				const dir_name = parts.pop() || parts.pop() || dir;
+				return dir_name.toLowerCase() === clean_arg.toLowerCase() || dir.toLowerCase() === clean_arg.toLowerCase();
+			});
+
+			if (match) {
+				window.api.unpinDir(match).then(result => {
+					const container = document.getElementById('terminal-chat-container');
+					const active_block = document.getElementById('active-chat-block');
+
+					const out_pre = document.createElement('pre');
+					out_pre.className = 'output';
+					if (result.success) {
+						out_pre.textContent = `Successfully unpinned directory: ${match}`;
+					} else {
+						out_pre.textContent = `Error: ${result.error || 'Failed to unpin'}`;
+					}
+					active_block.appendChild(out_pre);
+					appendNewPromptBlock(current_cwd);
+				});
+			} else {
+				const container = document.getElementById('terminal-chat-container');
+				const active_block = document.getElementById('active-chat-block');
+
+				const out_pre = document.createElement('pre');
+				out_pre.className = 'output';
+				out_pre.textContent = `Error: No matching pinned directory found for "${arg}".`;
+				active_block.appendChild(out_pre);
+				appendNewPromptBlock(current_cwd);
+			}
 			return;
 		} else if (trimmed.startsWith('/open')) {
 			const pathArg = trimmed.substring(5).trim();
@@ -561,51 +644,6 @@ function submitInput(text, usePro = false) {
 
 // Global hotkeys
 document.addEventListener('keydown', e => {
-	if (is_startup_dir_selection) {
-		const suggestions_elem = document.getElementById('slash-suggestions');
-		const suggestions_visible = suggestions_elem && suggestions_elem.style.display === 'flex';
-		if (suggestions_visible) {
-			if (e.key === 'ArrowDown') {
-				e.preventDefault();
-				selected_suggestion_index = (selected_suggestion_index + 1) % active_suggestions.length;
-				renderSuggestions(active_suggestions);
-			} else if (e.key === 'ArrowUp') {
-				e.preventDefault();
-				selected_suggestion_index = (selected_suggestion_index - 1 + active_suggestions.length) % active_suggestions.length;
-				renderSuggestions(active_suggestions);
-			} else if (e.key === 'Enter' || e.key === 'Tab') {
-				e.preventDefault();
-				const selected_item = active_suggestions[selected_suggestion_index];
-				if (selected_item) {
-					is_startup_dir_selection = false;
-					hideSuggestions();
-					const container = document.getElementById('terminal-chat-container');
-					container.innerHTML = '';
-					window.api.executeSlashCommand('/clear');
-					window.api.sendUserCommand(`cd "${selected_item.path}"`);
-				}
-			} else if (e.key === 'Escape') {
-				e.preventDefault();
-				is_startup_dir_selection = false;
-				hideSuggestions();
-				const input_elem = document.getElementById('active-input');
-				if (input_elem) {
-					input_elem.style.display = '';
-					input_elem.focus();
-				}
-			} else {
-				if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.key.startsWith('F')) {
-					e.preventDefault();
-				}
-			}
-		} else {
-			if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.key.startsWith('F')) {
-				e.preventDefault();
-			}
-		}
-		return;
-	}
-
 	if (document.body.classList.contains('mobile-active')) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -854,42 +892,6 @@ window.api.onWindowInit(info => {
 		pinned_dirs_global = info.pinnedDirs;
 	}
 
-	// On clean startup (no history), show directory selection suggestions dropdown
-	if (!info.historyHtml) {
-		is_startup_dir_selection = true;
-
-		const dir_suggestions = [];
-		if (home_dir_global) {
-			dir_suggestions.push({
-				name: 'Home',
-				description: home_dir_global,
-				path: home_dir_global,
-				isDir: true
-			});
-		}
-
-		pinned_dirs_global.forEach(dir => {
-			const parts = dir.split(/[/\\]/);
-			const dir_name = parts.pop() || parts.pop() || dir;
-			dir_suggestions.push({
-				name: dir_name,
-				description: dir,
-				path: dir,
-				isDir: true
-			});
-		});
-
-		active_suggestions = dir_suggestions;
-		selected_suggestion_index = 0;
-
-		setTimeout(() => {
-			const input_elem = document.getElementById('active-input');
-			if (input_elem) {
-				input_elem.style.display = 'none';
-			}
-			renderSuggestions(active_suggestions);
-		}, 100);
-	}
 });
 
 window.api.onShowQrCode(({ url, qrCodeDataUrl }) => {
@@ -1219,6 +1221,29 @@ async function handleOpenSuggestions(query, commandName) {
 	} else {
 		hideSuggestions();
 	}
+}
+
+function handlePinsSuggestions(query, cmdPrefix = '/pins') {
+	const matches = pinned_dirs_global.filter(dir => {
+		const parts = dir.split(/[/\\]/);
+		const dir_name = parts.pop() || parts.pop() || dir;
+		return dir_name.toLowerCase().includes(query.toLowerCase()) || dir.toLowerCase().includes(query.toLowerCase());
+	});
+
+	const suggestions = matches.map(dir => {
+		const parts = dir.split(/[/\\]/);
+		const dir_name = parts.pop() || parts.pop() || dir;
+		return {
+			name: dir_name,
+			description: dir,
+			path: dir,
+			isDir: true,
+			cmdPrefix: cmdPrefix
+		};
+	});
+
+	selected_suggestion_index = Math.min(selected_suggestion_index, Math.max(0, suggestions.length - 1));
+	renderSuggestions(suggestions);
 }
 
 async function handleOpenCommand(pathArg) {

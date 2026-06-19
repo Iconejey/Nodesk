@@ -649,6 +649,58 @@ function getVsCodePrettierConfig() {
   return {};
 }
 
+async function performWebSearch(query, api_key, model_name) {
+  try {
+    const config = loadConfig();
+    const active_model = model_name || config.flash_model || "gemini-3.5-flash";
+    const is_new_model = active_model.includes("gemini-3") || active_model.includes("gemini-2.5");
+    const tool_obj = is_new_model ? { google_search: {} } : { google_search_retrieval: {} };
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${active_model}:generateContent?key=${api_key}`;
+    const payload = {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: `Perform a search for the following query and summarize the key findings with sources: ${query}`
+            }
+          ]
+        }
+      ],
+      tools: [tool_obj]
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const error_text = await response.text();
+      return { error: `Gemini API returned status ${response.status}: ${error_text}` };
+    }
+
+    const data = await response.json();
+    if (data.candidates && data.candidates[0] && data.candidates[0].content) {
+      const text = data.candidates[0].content.parts[0].text;
+      const metadata = data.candidates[0].groundingMetadata || {};
+      return {
+        answer: text,
+        groundingMetadata: metadata
+      };
+    } else {
+      return { error: "No candidates returned from Gemini API", raw_response: data };
+    }
+  } catch (err) {
+    console.error("Web Search Error:", err.message);
+    return { error: err.message };
+  }
+}
+
 function readFile(file_path, start_line, end_line) {
   try {
     const content = fs.readFileSync(file_path, "utf8");
@@ -1048,6 +1100,23 @@ const tools_definition = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "Searches the web for the given query using Google Search grounding and returns grounded answers with sources.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The search query to look up on the web.",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
 ];
 
 // Agent execution loop
@@ -1191,6 +1260,12 @@ async function runAgentLoop(session, prompt, usePro) {
             const res = listDirectory(
               path.resolve(session.current_cwd, args.path || "."),
             );
+            if (res.error) {
+              is_error = true;
+            }
+            tool_result = JSON.stringify(res);
+          } else if (name === "web_search") {
+            const res = await performWebSearch(args.query, config.api_key, config.flash_model);
             if (res.error) {
               is_error = true;
             }

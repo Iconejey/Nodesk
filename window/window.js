@@ -968,6 +968,7 @@ window.api.onAgentToolStart(info => {
 		else if (info.name === 'edit_file') label = `Editing ${info.args.path}`;
 		else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
 		else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
+		else if (info.name === 'web_search') label = `Searching the web for "${info.args.query}"`;
 		else label = `Running ${info.name}...`;
 
 		pre_status.textContent = label;

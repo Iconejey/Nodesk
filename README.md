@@ -7,7 +7,13 @@ Nono-Terminal is an Electron-based persistent terminal emulator integrated with 
 ## Todo list
 
 - /context slash command to view the current context window size and contents.
-- Implement best agent practices and functions like web search.
+- Autocompletion for file paths and directory names in the prompt.
+- AI autocomplete suggestions for terminal input and code editing.
+- Multi-line input support on mobile devices.
+- /pin slash command to pin current directory to the pinned ones on startup, including home directory at the top of the list.
+- Full git management using commit (messages, button), push, pull and commit history in the currently implemented changes/diff page, renaming it "git management" page.
+- We currently have the AI showing an "I will..." message, then a function call, then an other "I will...". We want to limit these messages and group consecutive read file, search code base, web search, and other AI function calls together in the empty spinning line and tell the AI that instead of saying "I will read file and look for...", it should say "Read file and look for..." in a <
+- Better file edit output print.
 
 ## Architecture & Technical Stack
 
@@ -35,6 +41,7 @@ The AI agent operates in a reasoning loop using the OpenAI SDK.
     - `edit_file(path, search_content, replace_content)`: Performs unique search-and-replace edits.
     - `search_codebase(query)`: A native grep-like search across workspace text files.
     - `list_directory(path)`: Lists directory contents.
+    - `web_search(query)`: Searches the web for the given query using Google Search grounding via the user's Gemini API key.
 - **Abort & Retry:** Network calls feature a 30-second timeout wrapper (`callOpenAiWithRetry`) that retries up to 3 times on transient issues.
 - **Context Truncation:** To manage context window size and costs, older `read_file` and `search_codebase` tool responses are automatically truncated as the conversation grows.
 - **Error Loop Halting:** The agent will halt execution if a command or tool fails 3 consecutive times, preventing runaway loops.

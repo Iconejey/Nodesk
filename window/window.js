@@ -271,6 +271,8 @@ function appendNewPromptBlock(cwd) {
   pre_input.id = "active-input";
   pre_input.setAttribute("contenteditable", "true");
   pre_input.setAttribute("spellcheck", "false");
+  pre_input.setAttribute("autocapitalize", "none");
+  pre_input.setAttribute("autocorrect", "off");
 
   const suggestions_div = document.createElement("div");
   suggestions_div.className = "slash-suggestions";

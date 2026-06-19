@@ -13,6 +13,8 @@ let editor_file_lang = 'clike';
 let is_dirty = false;
 let is_loading_file = false;
 let opened_from_changes = false;
+let home_dir_global = '';
+let pinned_dirs_global = [];
 
 // Register custom diff language for Prism if not present
 if (window.Prism && !window.Prism.languages.diff) {
@@ -38,6 +40,14 @@ const slash_commands = [
 	},
 	{ name: '/open', description: 'Open a file in the inline editor' },
 	{
+		name: '/pin',
+		description: 'Pin a directory to bookmarks (defaults to current directory if no path specified)'
+	},
+	{
+		name: '/pins',
+		description: 'Open the dedicated pinned directories view overlay'
+	},
+	{
 		name: '/shortcuts',
 		description: 'List available keyboard shortcuts with descriptions'
 	},
@@ -48,6 +58,7 @@ const slash_commands = [
 ];
 
 let selected_suggestion_index = 0;
+let is_startup_dir_selection = false;
 let current_collapse_mode = 'full'; // 'full', 'collapsed', 'last', 'user'
 
 let active_output_block = null;
@@ -146,12 +157,21 @@ function renderSuggestions(filtered) {
       <span class="slash-suggestion-desc">${cmd.description}</span>
     `;
 		item.addEventListener('click', () => {
-			const input = document.getElementById('active-input');
-			const isCommand = cmd.name.startsWith('/');
-			input.textContent = isCommand ? cmd.name + ' ' : '/open ' + cmd.name + (cmd.isDir ? '/' : ' ');
-			placeCaretAtEnd(input);
-			hideSuggestions();
-			input.dispatchEvent(new Event('input'));
+			if (is_startup_dir_selection) {
+				is_startup_dir_selection = false;
+				hideSuggestions();
+				const container = document.getElementById('terminal-chat-container');
+				container.innerHTML = '';
+				window.api.executeSlashCommand('/clear');
+				window.api.sendUserCommand(`cd "${cmd.path}"`);
+			} else {
+				const input = document.getElementById('active-input');
+				const isCommand = cmd.name.startsWith('/');
+				input.textContent = isCommand ? cmd.name + ' ' : '/open ' + cmd.name + (cmd.isDir ? '/' : ' ');
+				placeCaretAtEnd(input);
+				hideSuggestions();
+				input.dispatchEvent(new Event('input'));
+			}
 		});
 		suggestions_elem.appendChild(item);
 	});
@@ -434,6 +454,8 @@ function submitInput(text, usePro = false) {
   /help           - Print this help message
   /mobile         - Share the current terminal UI with a mobile device via QR code
   /open [path]    - Open a file in the inline editor
+  /pin [path]     - Pin a directory (defaults to current dir)
+  /pins           - Show pinned directories view
   /shortcuts      - List available keyboard shortcuts with descriptions
   /test-md        - Simulate AI responding with markdown-debug-example.md content`;
 
@@ -442,6 +464,10 @@ function submitInput(text, usePro = false) {
 			return;
 		} else if (trimmed.startsWith('/changes')) {
 			openDiffOverlay();
+			appendNewPromptBlock(current_cwd);
+			return;
+		} else if (trimmed.startsWith('/pins')) {
+			openPinsOverlay();
 			appendNewPromptBlock(current_cwd);
 			return;
 		} else if (trimmed.startsWith('/open')) {
@@ -535,6 +561,51 @@ function submitInput(text, usePro = false) {
 
 // Global hotkeys
 document.addEventListener('keydown', e => {
+	if (is_startup_dir_selection) {
+		const suggestions_elem = document.getElementById('slash-suggestions');
+		const suggestions_visible = suggestions_elem && suggestions_elem.style.display === 'flex';
+		if (suggestions_visible) {
+			if (e.key === 'ArrowDown') {
+				e.preventDefault();
+				selected_suggestion_index = (selected_suggestion_index + 1) % active_suggestions.length;
+				renderSuggestions(active_suggestions);
+			} else if (e.key === 'ArrowUp') {
+				e.preventDefault();
+				selected_suggestion_index = (selected_suggestion_index - 1 + active_suggestions.length) % active_suggestions.length;
+				renderSuggestions(active_suggestions);
+			} else if (e.key === 'Enter' || e.key === 'Tab') {
+				e.preventDefault();
+				const selected_item = active_suggestions[selected_suggestion_index];
+				if (selected_item) {
+					is_startup_dir_selection = false;
+					hideSuggestions();
+					const container = document.getElementById('terminal-chat-container');
+					container.innerHTML = '';
+					window.api.executeSlashCommand('/clear');
+					window.api.sendUserCommand(`cd "${selected_item.path}"`);
+				}
+			} else if (e.key === 'Escape') {
+				e.preventDefault();
+				is_startup_dir_selection = false;
+				hideSuggestions();
+				const input_elem = document.getElementById('active-input');
+				if (input_elem) {
+					input_elem.style.display = '';
+					input_elem.focus();
+				}
+			} else {
+				if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.key.startsWith('F')) {
+					e.preventDefault();
+				}
+			}
+		} else {
+			if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.key.startsWith('F')) {
+				e.preventDefault();
+			}
+		}
+		return;
+	}
+
 	if (document.body.classList.contains('mobile-active')) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
@@ -774,6 +845,50 @@ window.api.onWindowInit(info => {
 			active_block.insertAdjacentHTML('beforebegin', info.historyHtml);
 			window.scrollTo(0, document.body.scrollHeight);
 		}
+	}
+
+	if (info.homeDir) {
+		home_dir_global = info.homeDir;
+	}
+	if (info.pinnedDirs) {
+		pinned_dirs_global = info.pinnedDirs;
+	}
+
+	// On clean startup (no history), show directory selection suggestions dropdown
+	if (!info.historyHtml) {
+		is_startup_dir_selection = true;
+
+		const dir_suggestions = [];
+		if (home_dir_global) {
+			dir_suggestions.push({
+				name: 'Home',
+				description: home_dir_global,
+				path: home_dir_global,
+				isDir: true
+			});
+		}
+
+		pinned_dirs_global.forEach(dir => {
+			const parts = dir.split(/[/\\]/);
+			const dir_name = parts.pop() || parts.pop() || dir;
+			dir_suggestions.push({
+				name: dir_name,
+				description: dir,
+				path: dir,
+				isDir: true
+			});
+		});
+
+		active_suggestions = dir_suggestions;
+		selected_suggestion_index = 0;
+
+		setTimeout(() => {
+			const input_elem = document.getElementById('active-input');
+			if (input_elem) {
+				input_elem.style.display = 'none';
+			}
+			renderSuggestions(active_suggestions);
+		}, 100);
 	}
 });
 
@@ -1911,3 +2026,8 @@ async function updateScrollbarDecorations() {
 
 	updateEditorLineNumbers();
 }
+
+window.api.onPinnedDirsUpdated(info => {
+	pinned_dirs_global = info.pinned_dirs;
+	home_dir_global = info.home_dir;
+});

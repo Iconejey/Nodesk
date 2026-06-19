@@ -28,6 +28,7 @@
 						onAgentToolComplete: callback => socketPromise.then(socket => socket.on('agent-tool-complete', callback)),
 						onAgentStatus: callback => socketPromise.then(socket => socket.on('agent-status', callback)),
 						onWindowInit: callback => socketPromise.then(socket => socket.on('window-init', callback)),
+						onPinnedDirsUpdated: callback => socketPromise.then(socket => socket.on('pinned-dirs-updated', callback)),
 						onShowQrCode: callback => socketPromise.then(socket => socket.on('show-qrcode', callback)),
 						onShellCommandStart: callback => socketPromise.then(socket => socket.on('shell-command-start', callback)),
 						onAgentPromptStart: callback => socketPromise.then(socket => socket.on('agent-prompt-start', callback)),
@@ -89,6 +90,13 @@
 								socket =>
 									new Promise(resolve => {
 										socket.emit('read-file-diff', { windowId: window.api.windowId, filePath }, resolve);
+									})
+							),
+						unpinDir: dirPath =>
+							socketPromise.then(
+								socket =>
+									new Promise(resolve => {
+										socket.emit('unpin-dir', { windowId: window.api.windowId, dirPath }, resolve);
 									})
 							)
 					};

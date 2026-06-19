@@ -91,6 +91,8 @@ function startMobileServer() {
             repoMap: generateRepoMap(data.session.current_cwd),
             availableCommands: getAvailableCommands(),
             historyHtml: historyHtml,
+            pinnedDirs: getPinnedDirectories(),
+            homeDir: os.homedir(),
           });
         }
       }
@@ -148,7 +150,7 @@ function startMobileServer() {
         } catch (err) {
           console.error("Failed to retrieve history HTML on request-state:", err);
         }
-        socket.emit("window-init", {
+         socket.emit("window-init", {
           windowId: actualWindowId,
           cwd: data.session.current_cwd,
           model: data.session.model,
@@ -156,6 +158,8 @@ function startMobileServer() {
           repoMap: generateRepoMap(data.session.current_cwd),
           availableCommands: getAvailableCommands(),
           historyHtml: historyHtml,
+          pinnedDirs: getPinnedDirectories(),
+          homeDir: os.homedir(),
         });
       }
     });
@@ -176,6 +180,26 @@ function startMobileServer() {
         callback({ resolved, error: res.error, code: res.code });
       } else {
         callback({ resolved, items: res });
+      }
+    });
+
+    socket.on("unpin-dir", ({ windowId, dirPath }, callback) => {
+      const pinned_dirs = getPinnedDirectories();
+      const idx = pinned_dirs.indexOf(dirPath);
+      if (idx !== -1) {
+        pinned_dirs.splice(idx, 1);
+        savePinnedDirectories(pinned_dirs);
+        const data = getWindowData(windowId);
+        if (data) {
+          const actual_window_id = data.win.webContents.id;
+          sendToWindow(actual_window_id, "pinned-dirs-updated", {
+            pinned_dirs: pinned_dirs,
+            home_dir: os.homedir(),
+          });
+        }
+        if (callback) callback({ success: true, pinned_dirs: pinned_dirs });
+      } else {
+        if (callback) callback({ success: false, error: "Directory not found in pinned list" });
       }
     });
     
@@ -386,6 +410,59 @@ async function executeSlashCommandForWindow(windowId, command_str) {
         cwd: data.session.current_cwd,
       });
     }
+  } else if (command_name === "/pin") {
+    let pin_path = args.slice(1).join(" ").trim();
+    if (!pin_path) {
+      pin_path = data.session.current_cwd;
+    } else {
+      pin_path = path.resolve(data.session.current_cwd, pin_path);
+    }
+
+    try {
+      if (!fs.existsSync(pin_path) || !fs.statSync(pin_path).isDirectory()) {
+        sendToWindow(windowId, "shell-output", {
+          text: `Error: "${pin_path}" is not a valid directory.\n`,
+          is_stderr: true,
+        });
+        sendToWindow(windowId, "shell-complete", {
+          exit_code: 1,
+          cwd: data.session.current_cwd,
+        });
+        return;
+      }
+
+      const pinned_dirs = getPinnedDirectories();
+      if (pinned_dirs.includes(pin_path)) {
+        sendToWindow(windowId, "shell-output", {
+          text: `Directory already pinned: ${pin_path}\n`,
+          is_stderr: false,
+        });
+      } else {
+        pinned_dirs.push(pin_path);
+        savePinnedDirectories(pinned_dirs);
+        sendToWindow(windowId, "shell-output", {
+          text: `Successfully pinned directory: ${pin_path}\n`,
+          is_stderr: false,
+        });
+        sendToWindow(windowId, "pinned-dirs-updated", {
+          pinned_dirs: pinned_dirs,
+          home_dir: os.homedir(),
+        });
+      }
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 0,
+        cwd: data.session.current_cwd,
+      });
+    } catch (err) {
+      sendToWindow(windowId, "shell-output", {
+        text: `Error pinning directory: ${err.message}\n`,
+        is_stderr: true,
+      });
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 1,
+        cwd: data.session.current_cwd,
+      });
+    }
   } else {
     sendToWindow(windowId, "shell-output", {
       text: `Unknown slash command: ${command_name}\n`,
@@ -395,6 +472,28 @@ async function executeSlashCommandForWindow(windowId, command_str) {
       exit_code: 1,
       cwd: data.session.current_cwd,
     });
+  }
+}
+
+const pinned_dirs_path = path.join(__dirname, "pinned_directories.json");
+
+function getPinnedDirectories() {
+  try {
+    if (fs.existsSync(pinned_dirs_path)) {
+      const content = fs.readFileSync(pinned_dirs_path, "utf8");
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.error("Error reading pinned_directories.json:", err.message);
+  }
+  return [];
+}
+
+function savePinnedDirectories(dirs) {
+  try {
+    fs.writeFileSync(pinned_dirs_path, JSON.stringify(dirs, null, 2), "utf8");
+  } catch (err) {
+    console.error("Error writing pinned_directories.json:", err.message);
   }
 }
 
@@ -1399,6 +1498,8 @@ function createWindow(initial_cwd) {
       apiKeyConfigured: !!getApiKey(),
       repoMap: repo_map,
       availableCommands: getAvailableCommands(),
+      pinnedDirs: getPinnedDirectories(),
+      homeDir: os.homedir(),
     });
   });
 
@@ -1473,6 +1574,8 @@ ipcMain.on("request-state", (event) => {
       apiKeyConfigured: !!getApiKey(),
       repoMap: generateRepoMap(data.session.current_cwd),
       availableCommands: getAvailableCommands(),
+      pinnedDirs: getPinnedDirectories(),
+      homeDir: os.homedir(),
     });
   }
 });
@@ -1491,6 +1594,21 @@ ipcMain.handle("read-dir", async (event, dir_path) => {
   const res = listDirectory(resolved);
   if (res.error) return { resolved, error: res.error, code: res.code };
   return { resolved, items: res };
+});
+
+ipcMain.handle("unpin-dir", async (event, dir_path) => {
+  const pinned_dirs = getPinnedDirectories();
+  const idx = pinned_dirs.indexOf(dir_path);
+  if (idx !== -1) {
+    pinned_dirs.splice(idx, 1);
+    savePinnedDirectories(pinned_dirs);
+    sendToWindow(event.sender.id, "pinned-dirs-updated", {
+      pinned_dirs: pinned_dirs,
+      home_dir: os.homedir(),
+    });
+    return { success: true, pinned_dirs };
+  }
+  return { success: false, error: "Directory not found in pinned list" };
 });
 
 ipcMain.handle("read-file-content", async (event, file_path) => {

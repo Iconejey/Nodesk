@@ -10,10 +10,10 @@ Nono-Terminal is an Electron-based persistent terminal emulator integrated with 
 - Autocompletion for file paths and directory names in the prompt.
 - AI autocomplete suggestions for terminal input and code editing.
 - Multi-line input support on mobile devices.
-- /pin slash command to pin current directory to the pinned ones on startup, including home directory at the top of the list.
+- On startup, show a directory list with the home directory and the pinned directories. To pin a directory, use the `/pin` slash command. X buttons in the directory list allow unpinning directories.
 - Full git management using commit (messages, button), push, pull and commit history in the currently implemented changes/diff page, renaming it "git management" page.
-- We currently have the AI showing an "I will..." message, then a function call, then an other "I will...". We want to limit these messages and group consecutive read file, search code base, web search, and other AI function calls together in the empty spinning line and tell the AI that instead of saying "I will read file and look for...", it should say "Read file and look for..." in a <
 - Better file edit output print.
+- /web {query} slash command to do a web search
 
 ## Architecture & Technical Stack
 
@@ -69,6 +69,7 @@ Typing a `/` in the prompt opens an autocomplete popup box under the cursor.
     - `/exit`: Closes the current window.
     - `/model [name]`: Sets or views the active chat completions model (e.g. `/model gpt-4o-mini`).
     - `/models`: Fetches and lists all available models from the active provider using the `openai.models.list()` API.
+    - `/pin [path]`: Bookmarks/pins a directory in the startup quick access list (defaults to current directory if path is omitted).
     - `/provider [name] [base_url] [api_key]`: Views, registers, or changes the active API provider, supporting custom base URLs (e.g. OpenRouter, Groq, local Ollama).
     - `/providers`: Lists all registered API providers.
     - `/help`: Prints the list of available slash commands.

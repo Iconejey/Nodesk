@@ -709,6 +709,11 @@ window.addEventListener('DOMContentLoaded', () => {
 		toggleModeBtn.addEventListener('click', toggleEditorMode);
 	}
 
+	const toggleLinesBtn = document.getElementById('editor-btn-toggle-lines');
+	if (toggleLinesBtn) {
+		toggleLinesBtn.addEventListener('click', toggleLineNumbers);
+	}
+
 	const saveBtn = document.getElementById('editor-btn-save');
 	if (saveBtn) {
 		saveBtn.addEventListener('click', saveEditorContent);
@@ -1093,6 +1098,10 @@ async function openEditor(filePath) {
 	is_dirty = false;
 	is_loading_file = true;
 
+	if (overlay) overlay.classList.remove('lines-hidden');
+	const toggleLinesBtn = document.getElementById('editor-btn-toggle-lines');
+	if (toggleLinesBtn) toggleLinesBtn.style.opacity = '';
+
 	if (lineNumbers) {
 		lineNumbers.style.fontFamily = '';
 		lineNumbers.style.textAlign = '';
@@ -1395,6 +1404,19 @@ async function toggleEditorMode() {
 		}
 		is_loading_file = false;
 		updateEditorLineNumbers(result.content);
+	}
+}
+
+function toggleLineNumbers() {
+	const overlay = document.getElementById('editor-overlay');
+	const toggleLinesBtn = document.getElementById('editor-btn-toggle-lines');
+	if (!overlay || !toggleLinesBtn) return;
+
+	const isHidden = overlay.classList.toggle('lines-hidden');
+	if (isHidden) {
+		toggleLinesBtn.style.opacity = '0.5';
+	} else {
+		toggleLinesBtn.style.opacity = '';
 	}
 }
 

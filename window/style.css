@@ -1060,6 +1060,25 @@ body.diff-active terminal-chat {
 	padding: 8px 12px;
 }
 
+.btn-toggle-lines {
+	display: none !important;
+	background: color-mix(in srgb, var(--yellow) 10%, transparent);
+	border: 1px solid color-mix(in srgb, var(--yellow) 25%, transparent);
+	color: var(--yellow);
+}
+
+.btn-toggle-lines:hover {
+	background: color-mix(in srgb, var(--yellow) 20%, transparent);
+	color: var(--off-white);
+	transform: translateY(-1px);
+	box-shadow: 0 0 12px color-mix(in srgb, var(--yellow) 30%, transparent);
+}
+
+.lines-hidden #editor-line-numbers {
+	display: none !important;
+}
+
+
 @media (max-width: 768px) {
 	.editor-overlay,
 	.diff-overlay {
@@ -1074,6 +1093,9 @@ body.diff-active terminal-chat {
 		padding: 8px 10px;
 		font-size: 1.15em;
 		gap: 0;
+	}
+	.btn-toggle-lines {
+		display: inline-flex !important;
 	}
 	.btn-editor .btn-text,
 	.btn-diff .btn-text {

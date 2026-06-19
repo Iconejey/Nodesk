@@ -8,6 +8,18 @@ let workspace_root = "";
 let active_suggestions = [];
 let open_command_cache = null;
 let jar = null;
+let editor_mode = "edit";
+let editor_file_lang = "clike";
+let is_dirty = false;
+
+// Register custom diff language for Prism if not present
+if (window.Prism && !window.Prism.languages.diff) {
+  window.Prism.languages.diff = {
+    coord: /^@@.*@@$/m,
+    deleted: /^\-.*/m,
+    inserted: /^\+.*/m
+  };
+}
 
 const slash_commands = [
   { name: "/clear", description: "Clear terminal screen history" },
@@ -687,6 +699,32 @@ window.addEventListener("DOMContentLoaded", () => {
         editorCode.scrollTop;
     });
 
+    // Block keyboard input and modification in diff mode, while allowing selection and copying
+    editorCode.addEventListener("keydown", (e) => {
+      if (editor_mode === "diff") {
+        const isCopy = (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C');
+        const isNavigation = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown'].includes(e.key);
+        if (!isCopy && !isNavigation) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }
+    }, true);
+
+    editorCode.addEventListener("paste", (e) => {
+      if (editor_mode === "diff") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
+    editorCode.addEventListener("cut", (e) => {
+      if (editor_mode === "diff") {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+
     // Initialize CodeJar with Prism syntax highlighting
     jar = CodeJar(editorCode, (editor) => {
       if (window.Prism) {
@@ -697,7 +735,15 @@ window.addEventListener("DOMContentLoaded", () => {
     // Update line numbers on edits
     jar.onUpdate((code) => {
       updateEditorLineNumbers(code);
+      if (editor_mode === "edit") {
+        is_dirty = true;
+      }
     });
+  }
+
+  const toggleModeBtn = document.getElementById("editor-btn-toggle-mode");
+  if (toggleModeBtn) {
+    toggleModeBtn.addEventListener("click", toggleEditorMode);
   }
 
   const saveBtn = document.getElementById("editor-btn-save");
@@ -1098,6 +1144,19 @@ async function openEditor(filePath) {
   const pathSpan = document.getElementById("editor-file-path");
   const overlay = document.getElementById("editor-overlay");
 
+  editor_mode = "edit";
+  is_dirty = false;
+
+  const saveBtn = document.getElementById("editor-btn-save");
+  if (saveBtn) saveBtn.style.display = "";
+
+  const toggleIcon = document.getElementById("editor-toggle-icon");
+  const toggleText = document.getElementById("editor-toggle-text");
+  if (toggleIcon) toggleIcon.textContent = "difference";
+  if (toggleText) toggleText.textContent = "Diff Mode";
+
+  editorCode.setAttribute("contenteditable", "plaintext-only");
+
   pathSpan.textContent = "Loading " + filePath + "...";
   if (jar) jar.updateCode("");
   lineNumbers.textContent = "1";
@@ -1125,6 +1184,8 @@ async function openEditor(filePath) {
   else if (["html", "xml", "svg"].includes(ext)) lang = "markup";
   else if (["css"].includes(ext)) lang = "css";
   else if (["md", "markdown"].includes(ext)) lang = "markdown";
+
+  editor_file_lang = lang;
 
   editorCode.className = "editor-code language-" + lang;
   if (lang === "markdown") {
@@ -1202,6 +1263,7 @@ async function saveEditorContent() {
       saveBtn.innerHTML = originalText;
     }, 2000);
   } else {
+    is_dirty = false;
     if (result.formatted && result.formattedContent) {
       if (jar) {
         const pos = jar.save();
@@ -1225,6 +1287,78 @@ async function saveEditorContent() {
       saveBtn.style.background = "";
       saveBtn.style.color = "";
     }, 1500);
+  }
+}
+
+async function toggleEditorMode() {
+  if (!active_editor_file_path) return;
+
+  const editorCode = document.getElementById("editor-code");
+  const saveBtn = document.getElementById("editor-btn-save");
+  const toggleIcon = document.getElementById("editor-toggle-icon");
+  const toggleText = document.getElementById("editor-toggle-text");
+
+  if (editor_mode === "edit") {
+    // Switch to diff mode
+    if (is_dirty) {
+      if (confirm("Save changes before switching to Diff Mode?")) {
+        await saveEditorContent();
+      }
+    }
+
+    // Fetch the git diff
+    toggleText.textContent = "Loading Diff...";
+    const result = await window.api.readFileDiff(active_editor_file_path);
+    if (result.error) {
+      alert("Failed to read diff: " + result.error);
+      toggleText.textContent = "Diff Mode";
+      return;
+    }
+
+    editor_mode = "diff";
+    editorCode.setAttribute("contenteditable", "false");
+    editorCode.className = "editor-code language-diff";
+    saveBtn.style.display = "none";
+    toggleIcon.textContent = "edit_note";
+    toggleText.textContent = "Edit Mode";
+
+    const diffContent = result.diff || "No changes.";
+    if (jar) {
+      jar.updateCode(diffContent);
+    } else {
+      editorCode.textContent = diffContent;
+    }
+    updateEditorLineNumbers(diffContent);
+  } else {
+    // Switch to edit mode
+    toggleText.textContent = "Loading File...";
+    const result = await window.api.readFileContent(active_editor_file_path);
+    if (result.error) {
+      alert("Failed to read file: " + result.error);
+      toggleText.textContent = "Edit Mode";
+      return;
+    }
+
+    editor_mode = "edit";
+    is_dirty = false;
+    editorCode.setAttribute("contenteditable", "plaintext-only");
+    editorCode.className = "editor-code language-" + editor_file_lang;
+    if (editor_file_lang === "markdown") {
+      editorCode.classList.add("editor-wrap");
+    } else {
+      editorCode.classList.remove("editor-wrap");
+    }
+
+    saveBtn.style.display = "";
+    toggleIcon.textContent = "difference";
+    toggleText.textContent = "Diff Mode";
+
+    if (jar) {
+      jar.updateCode(result.content);
+    } else {
+      editorCode.textContent = result.content;
+    }
+    updateEditorLineNumbers(result.content);
   }
 }
 

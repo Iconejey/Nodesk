@@ -83,6 +83,13 @@
 									new Promise(resolve => {
 										socket.emit('git-unstage-file', { windowId: window.api.windowId, filePath }, resolve);
 									})
+							),
+						readFileDiff: filePath =>
+							socketPromise.then(
+								socket =>
+									new Promise(resolve => {
+										socket.emit('read-file-diff', { windowId: window.api.windowId, filePath }, resolve);
+									})
 							)
 					};
 
@@ -122,6 +129,10 @@
 					<span id="editor-file-path" class="editor-file-path">file.txt</span>
 				</div>
 				<div class="editor-actions">
+					<button id="editor-btn-toggle-mode" class="btn-editor btn-toggle-mode">
+						<span class="material-symbols-outlined" id="editor-toggle-icon" style="font-size: 1.2em">difference</span>
+						<span id="editor-toggle-text">Diff Mode</span>
+					</button>
 					<button id="editor-btn-save" class="btn-editor btn-save">
 						<span class="material-symbols-outlined" style="font-size: 1.2em">save</span>
 						Save

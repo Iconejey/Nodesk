@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('api', {
   openInVsCode: (filePath) => ipcRenderer.invoke('open-in-vs-code', filePath),
   readGitStatus: () => ipcRenderer.invoke('read-git-status'),
   stageFile: (filePath) => ipcRenderer.invoke('git-stage-file', filePath),
-  unstageFile: (filePath) => ipcRenderer.invoke('git-unstage-file', filePath)
+  unstageFile: (filePath) => ipcRenderer.invoke('git-unstage-file', filePath),
+  readFileDiff: (filePath) => ipcRenderer.invoke('read-file-diff', filePath)
 });
 

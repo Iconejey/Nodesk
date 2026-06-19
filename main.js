@@ -282,6 +282,31 @@ function startMobileServer() {
       });
     });
 
+    socket.on("read-file-diff", ({ windowId, filePath }, callback) => {
+      const wId = parseInt(windowId, 10);
+      const data = active_windows.get(wId);
+      const base = data ? data.session.current_cwd : process.cwd();
+      const resolved = path.resolve(base, filePath);
+      exec(`git status --porcelain -- "${resolved}"`, { cwd: base }, (err, stdout, stderr) => {
+        if (err) {
+          callback({ resolved, error: stderr || err.message });
+          return;
+        }
+        const isUntracked = stdout.startsWith("??");
+        let diffCmd = `git diff HEAD -- "${resolved}"`;
+        if (isUntracked) {
+          diffCmd = `git diff --no-index -- /dev/null "${resolved}"`;
+        }
+        exec(diffCmd, { cwd: base }, (diffErr, diffStdout, diffStderr) => {
+          if (diffErr && diffErr.code !== 1 && diffErr.code !== 0) {
+            callback({ resolved, error: diffStderr || diffErr.message });
+            return;
+          }
+          callback({ resolved, diff: diffStdout });
+        });
+      });
+    });
+
     socket.on("disconnect", () => {
       console.log("Socket client disconnected");
     });
@@ -1511,3 +1536,31 @@ ipcMain.handle("git-unstage-file", async (event, filePath) => {
     });
   });
 });
+
+ipcMain.handle("read-file-diff", async (event, filePath) => {
+  const data = active_windows.get(event.sender.id);
+  const base = data ? data.session.current_cwd : process.cwd();
+  const resolved = path.resolve(base, filePath);
+  
+  return new Promise((resolve) => {
+    exec(`git status --porcelain -- "${resolved}"`, { cwd: base }, (err, stdout, stderr) => {
+      if (err) {
+        resolve({ resolved, error: stderr || err.message });
+        return;
+      }
+      const isUntracked = stdout.startsWith("??");
+      let diffCmd = `git diff HEAD -- "${resolved}"`;
+      if (isUntracked) {
+        diffCmd = `git diff --no-index -- /dev/null "${resolved}"`;
+      }
+      exec(diffCmd, { cwd: base }, (diffErr, diffStdout, diffStderr) => {
+        if (diffErr && diffErr.code !== 1 && diffErr.code !== 0) {
+          resolve({ resolved, error: diffStderr || diffErr.message });
+          return;
+        }
+        resolve({ resolved, diff: diffStdout });
+      });
+    });
+  });
+});
+

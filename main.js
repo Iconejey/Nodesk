@@ -56,6 +56,7 @@ function startMobileServer() {
   io_server.on("connection", (socket) => {
     let joinedRoom = null;
     let screen_stream_interval = null;
+    let is_streaming_screen = false;
     
     const getWindowData = (windowId) => {
       const wId = parseInt(windowId, 10);
@@ -347,33 +348,45 @@ function startMobileServer() {
 
     socket.on("start-screen-stream", () => {
       console.log("Socket client requested screen stream start");
+      is_streaming_screen = true;
       if (screen_stream_interval) {
-        clearInterval(screen_stream_interval);
+        clearTimeout(screen_stream_interval);
       }
       
       const fallbackCapture = () => {
+        if (!is_streaming_screen) return;
         const { desktopCapturer } = require("electron");
         desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1280, height: 720 } }).then(sources => {
-          if (sources.length > 0) {
+          if (sources.length > 0 && is_streaming_screen) {
             const source = sources[0];
             const jpeg_buffer = source.thumbnail.toJPEG(80);
             const base64_str = jpeg_buffer.toString("base64");
             const data_url = `data:image/jpeg;base64,${base64_str}`;
             socket.emit("screen-frame", { dataUrl: data_url });
           }
+          if (is_streaming_screen) {
+            screen_stream_interval = setTimeout(captureAndSend, 0);
+          }
         }).catch(err => {
           console.error("Screen capture failed:", err);
+          if (is_streaming_screen) {
+            screen_stream_interval = setTimeout(captureAndSend, 1000);
+          }
         });
       };
 
       const captureAndSend = () => {
+        if (!is_streaming_screen) return;
         if (process.platform === "linux") {
           const { exec } = require("child_process");
-          exec('grim - | convert - -resize 1280x720 -quality 80 jpeg:-', { encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-            if (!err && stdout && stdout.length > 0) {
+          exec('grim -t ppm - | ffmpeg -y -f image2pipe -vcodec ppm -i - -vf scale=480:-1:flags=neighbor -q:v 10 -f image2pipe -', { encoding: 'buffer', maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+            if (!err && stdout && stdout.length > 0 && is_streaming_screen) {
               const base64_str = stdout.toString("base64");
               const data_url = `data:image/jpeg;base64,${base64_str}`;
               socket.emit("screen-frame", { dataUrl: data_url });
+              if (is_streaming_screen) {
+                screen_stream_interval = setTimeout(captureAndSend, 0);
+              }
             } else {
               fallbackCapture();
             }
@@ -384,21 +397,22 @@ function startMobileServer() {
       };
 
       captureAndSend();
-      screen_stream_interval = setInterval(captureAndSend, 1000);
     });
 
     socket.on("stop-screen-stream", () => {
       console.log("Socket client requested screen stream stop");
+      is_streaming_screen = false;
       if (screen_stream_interval) {
-        clearInterval(screen_stream_interval);
+        clearTimeout(screen_stream_interval);
         screen_stream_interval = null;
       }
     });
 
     socket.on("disconnect", () => {
       console.log("Socket client disconnected");
+      is_streaming_screen = false;
       if (screen_stream_interval) {
-        clearInterval(screen_stream_interval);
+        clearTimeout(screen_stream_interval);
         screen_stream_interval = null;
       }
     });

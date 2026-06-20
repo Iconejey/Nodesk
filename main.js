@@ -451,6 +451,30 @@ async function executeSlashCommandForWindow(windowId, command_str) {
         cwd: data.session.current_cwd,
       });
     }
+  } else if (command_name === "/fullscreen") {
+    try {
+      const isFS = data.win.isFullScreen();
+      const nextFS = !isFS;
+      data.win.setFullScreen(nextFS);
+      
+      sendToWindow(windowId, "shell-output", {
+        text: `Window is now ${nextFS ? "fullscreen" : "windowed"}.\n`,
+        is_stderr: false,
+      });
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 0,
+        cwd: data.session.current_cwd,
+      });
+    } catch (err) {
+      sendToWindow(windowId, "shell-output", {
+        text: `Error setting fullscreen: ${err.message}\n`,
+        is_stderr: true,
+      });
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 1,
+        cwd: data.session.current_cwd,
+      });
+    }
   } else if (command_name === "/add-pin") {
     let pin_path = args.slice(1).join(" ").trim();
     if (!pin_path) {

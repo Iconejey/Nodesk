@@ -33,6 +33,7 @@ const slash_commands = [
 		description: 'Show Git changed files categorized by staged/unstaged status'
 	},
 	{ name: '/exit', description: 'Close current window' },
+	{ name: '/fullscreen', description: 'Toggle fullscreen mode for the window' },
 	{ name: '/help', description: 'Show list of available commands' },
 	{
 		name: '/mobile',
@@ -457,6 +458,7 @@ function submitInput(text, usePro = false) {
   /clear          - Clear terminal screen history
   /code [path]    - Open file in VS Code
   /exit           - Close current window
+  /fullscreen     - Toggle fullscreen mode
   /help           - Print this help message
   /mobile         - Share the current terminal UI with a mobile device via QR code
   /open [path]    - Open a file in the inline editor
@@ -557,6 +559,35 @@ function submitInput(text, usePro = false) {
 				appendNewPromptBlock(current_cwd);
 			}
 			return;
+		} else if (trimmed.startsWith('/fullscreen')) {
+			const is_mobile = !window.process || !window.process.versions || !window.process.versions.electron;
+			if (is_mobile) {
+				const container = document.getElementById('terminal-chat-container');
+				const active_block = document.getElementById('active-chat-block');
+				const out_pre = document.createElement('pre');
+				out_pre.className = 'output';
+
+				if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+					const enterFS = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || document.documentElement.msRequestFullscreen;
+					if (enterFS) {
+						enterFS.call(document.documentElement);
+						out_pre.textContent = 'Mobile view is now fullscreen.';
+					} else {
+						out_pre.textContent = 'Fullscreen is not supported on this mobile device/browser.';
+					}
+				} else {
+					const exitFS = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+					if (exitFS) {
+						exitFS.call(document);
+						out_pre.textContent = 'Mobile view is now windowed.';
+					} else {
+						out_pre.textContent = 'Failed to exit fullscreen.';
+					}
+				}
+				active_block.appendChild(out_pre);
+				appendNewPromptBlock(current_cwd);
+				return;
+			}
 		} else if (trimmed === '/screen') {
 			const is_mobile = !window.process || !window.process.versions || !window.process.versions.electron;
 			if (!is_mobile) {

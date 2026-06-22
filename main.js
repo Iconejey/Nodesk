@@ -7,9 +7,15 @@ if (process.platform === "linux") {
   app.commandLine.appendSwitch("ignore-gpu-blocklist");
   app.commandLine.appendSwitch("enable-gpu-rasterization");
   app.commandLine.appendSwitch("disable-vulkan");
-  app.commandLine.appendSwitch("enable-features", "VaapiVideoDecoder,VaapiVideoEncoder,CanvasOopRasterization,UseOzonePlatform");
+  app.commandLine.appendSwitch(
+    "enable-features",
+    "VaapiVideoDecoder,VaapiVideoEncoder,CanvasOopRasterization,UseOzonePlatform",
+  );
   app.commandLine.appendSwitch("ozone-platform", "wayland");
-  app.commandLine.appendSwitch("disable-features", "ZeroCopyVideoCapture,UseChromeOSDirectVideoDecoder,WebRTCPipeWireUseDmabuf,WebRtcHideLocalIpsWithMdns");
+  app.commandLine.appendSwitch(
+    "disable-features",
+    "ZeroCopyVideoCapture,UseChromeOSDirectVideoDecoder,WebRTCPipeWireUseDmabuf,WebRtcHideLocalIpsWithMdns",
+  );
 }
 
 const { spawn, exec } = require("child_process");
@@ -34,7 +40,7 @@ if (process.env.XDG_RUNTIME_DIR && process.env.HYPRLAND_INSTANCE_SIGNATURE) {
     process.env.XDG_RUNTIME_DIR,
     "hypr",
     process.env.HYPRLAND_INSTANCE_SIGNATURE,
-    ".socket.sock"
+    ".socket.sock",
   );
 }
 
@@ -163,6 +169,7 @@ function startMobileServer() {
             historyHtml: historyHtml,
             pinnedDirs: getPinnedDirectories(),
             homeDir: os.homedir(),
+            displaySize: getPrimaryDisplaySize(),
           });
         }
       }
@@ -233,6 +240,7 @@ function startMobileServer() {
           historyHtml: historyHtml,
           pinnedDirs: getPinnedDirectories(),
           homeDir: os.homedir(),
+          displaySize: getPrimaryDisplaySize(),
         });
       }
     });
@@ -437,12 +445,17 @@ function startMobileServer() {
       }
       cursor_sync_interval = setInterval(() => {
         try {
-          const point = electronScreen ? electronScreen.getCursorScreenPoint() : require("electron").screen.getCursorScreenPoint();
+          const point = electronScreen
+            ? electronScreen.getCursorScreenPoint()
+            : require("electron").screen.getCursorScreenPoint();
           const size = getPrimaryDisplaySize();
           if (size) {
             const xNorm = point.x / size.width;
             const yNorm = point.y / size.height;
-            if (Math.abs(xNorm - last_cursor_pos.x) > 0.002 || Math.abs(yNorm - last_cursor_pos.y) > 0.002) {
+            if (
+              Math.abs(xNorm - last_cursor_pos.x) > 0.002 ||
+              Math.abs(yNorm - last_cursor_pos.y) > 0.002
+            ) {
               last_cursor_pos = { x: xNorm, y: yNorm };
               socket.emit("cursor-sync", { x: xNorm, y: yNorm });
             }
@@ -458,7 +471,10 @@ function startMobileServer() {
                 if (size) {
                   const xNorm = curX / size.width;
                   const yNorm = curY / size.height;
-                  if (Math.abs(xNorm - last_cursor_pos.x) > 0.002 || Math.abs(yNorm - last_cursor_pos.y) > 0.002) {
+                  if (
+                    Math.abs(xNorm - last_cursor_pos.x) > 0.002 ||
+                    Math.abs(yNorm - last_cursor_pos.y) > 0.002
+                  ) {
                     last_cursor_pos = { x: xNorm, y: yNorm };
                     socket.emit("cursor-sync", { x: xNorm, y: yNorm });
                   }
@@ -469,7 +485,6 @@ function startMobileServer() {
         }
       }, 100);
     });
-
 
     socket.on("mouse-move", ({ x, y }) => {
       const size = getPrimaryDisplaySize();
@@ -1868,6 +1883,12 @@ ipcMain.on("webrtc-signal-to-mobile", (event, socketId, signal) => {
 ipcMain.on("stream-crop-updated", (event, socketId, region) => {
   if (io_server) {
     io_server.to(socketId).emit("stream-crop-updated", { region });
+  }
+});
+
+ipcMain.on("send-screen-bg", (event, socketId, jpegData) => {
+  if (io_server) {
+    io_server.to(socketId).emit("screen-bg-updated", { bg: jpegData });
   }
 });
 

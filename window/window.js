@@ -703,6 +703,11 @@ function submitInput(text, usePro = false) {
           normY = 0.5;
           viewX = 0.5;
           viewY = 0.5;
+          const bgImg = document.getElementById("screen-stream-bg");
+          if (bgImg) {
+            bgImg.src = "";
+            bgImg.style.display = "none";
+          }
           updateScreenTransform();
 
           // WebRTC Mobile cleanup
@@ -715,6 +720,11 @@ function submitInput(text, usePro = false) {
             clearTimeout(webrtcTimeout);
             webrtcTimeout = null;
           }
+          receivedFrameCrops = [];
+          lastFrameMetadata = null;
+          mediaTimeOffset = null;
+          rtpTimestampOffset = null;
+          streamStartTime = null;
 
           const videoElem = document.getElementById("screen-stream-video");
           if (videoElem) {
@@ -747,6 +757,16 @@ function submitInput(text, usePro = false) {
           normY = 0.5;
           viewX = 0.5;
           viewY = 0.5;
+          const bgImg = document.getElementById("screen-stream-bg");
+          if (bgImg) {
+            bgImg.src = "";
+            bgImg.style.display = "none";
+          }
+          receivedFrameCrops = [];
+          lastFrameMetadata = null;
+          mediaTimeOffset = null;
+          rtpTimestampOffset = null;
+          streamStartTime = null;
           updateScreenTransform();
 
           const video = document.getElementById("screen-stream-video");
@@ -1313,6 +1333,17 @@ window.api.onWindowInit((info) => {
   if (info.pinnedDirs) {
     pinned_dirs_global = info.pinnedDirs;
   }
+  if (
+    is_mobile &&
+    info.displaySize &&
+    info.displaySize.width &&
+    info.displaySize.height
+  ) {
+    const wrapper = document.getElementById("screen-stream-content-wrapper");
+    if (wrapper) {
+      wrapper.style.aspectRatio = `${info.displaySize.width} / ${info.displaySize.height}`;
+    }
+  }
 });
 
 window.api.onShowQrCode(({ url, qrCodeDataUrl }) => {
@@ -1369,6 +1400,12 @@ let stateHistory = [
     cursor: { x: 0.5, y: 0.5 },
   },
 ];
+
+let receivedFrameCrops = [];
+let lastFrameMetadata = null;
+let mediaTimeOffset = null;
+let rtpTimestampOffset = null;
+let streamStartTime = null;
 
 function pushStateHistory(crop, cursor) {
   const now = Date.now();
@@ -1436,6 +1473,92 @@ function getDelayedState(delayMs = 1000) {
   return stateHistory[stateHistory.length - 1];
 }
 
+function getFrameCropFromRtpTimestamp(rtpTimestamp, mediaTime) {
+  if (receivedFrameCrops.length === 0) {
+    return currentStreamCrop || { x: 0, y: 0, w: 1, h: 1 };
+  }
+
+  if (rtpTimestampOffset === null) {
+    // Estimate initial RTP offset using the crop that arrived around the playout delay window.
+    const elapsed = streamStartTime ? (Date.now() - streamStartTime) : 1000;
+    const targetArrival = Date.now() - Math.min(elapsed, 1000);
+    let closestEntry = receivedFrameCrops[0];
+    let minDiff = Math.abs(receivedFrameCrops[0].receiveTime - targetArrival);
+
+    for (let i = 1; i < receivedFrameCrops.length; i++) {
+      const diff = Math.abs(receivedFrameCrops[i].receiveTime - targetArrival);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestEntry = receivedFrameCrops[i];
+      }
+    }
+
+    rtpTimestampOffset = rtpTimestamp - Math.round(closestEntry.timestamp * 0.09);
+  }
+
+  const targetSenderTimestamp = Math.round((rtpTimestamp - rtpTimestampOffset) / 0.09);
+
+  let bestEntry = receivedFrameCrops[0];
+  let minDiff = Math.abs(
+    receivedFrameCrops[0].timestamp - targetSenderTimestamp,
+  );
+
+  for (let i = 1; i < receivedFrameCrops.length; i++) {
+    const diff = Math.abs(
+      receivedFrameCrops[i].timestamp - targetSenderTimestamp,
+    );
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestEntry = receivedFrameCrops[i];
+    }
+  }
+
+  return bestEntry.crop;
+}
+
+function getFrameCropFromMediaTime(mediaTime) {
+  if (receivedFrameCrops.length === 0) {
+    return currentStreamCrop || { x: 0, y: 0, w: 1, h: 1 };
+  }
+
+  if (mediaTimeOffset === null) {
+    // Estimate media timeline offset using local arrival timestamps.
+    const elapsed = streamStartTime ? (Date.now() - streamStartTime) : 1000;
+    const targetArrival = Date.now() - Math.min(elapsed, 1000);
+    let closestEntry = receivedFrameCrops[0];
+    let minDiff = Math.abs(receivedFrameCrops[0].receiveTime - targetArrival);
+
+    for (let i = 1; i < receivedFrameCrops.length; i++) {
+      const diff = Math.abs(receivedFrameCrops[i].receiveTime - targetArrival);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestEntry = receivedFrameCrops[i];
+      }
+    }
+
+    mediaTimeOffset = closestEntry.timestamp / 1000000 - mediaTime;
+  }
+
+  const targetSenderTimestamp = (mediaTime + mediaTimeOffset) * 1000000;
+
+  let bestEntry = receivedFrameCrops[0];
+  let minDiff = Math.abs(
+    receivedFrameCrops[0].timestamp - targetSenderTimestamp,
+  );
+
+  for (let i = 1; i < receivedFrameCrops.length; i++) {
+    const diff = Math.abs(
+      receivedFrameCrops[i].timestamp - targetSenderTimestamp,
+    );
+    if (diff < minDiff) {
+      minDiff = diff;
+      bestEntry = receivedFrameCrops[i];
+    }
+  }
+
+  return bestEntry.crop;
+}
+
 let desktopConnections = new Map(); // socketId -> { pc, canvas, ctx, crop, stopFrameLoop }
 
 // Touch Navigation State
@@ -1497,33 +1620,47 @@ function performSendCrop() {
 
 function updateScreenTransform(sendToServer = true) {
   const container = document.getElementById("screen-stream-container");
-  const activeElem = document.getElementById("screen-stream-video");
+  const wrapper = document.getElementById("screen-stream-content-wrapper");
 
-  if (!container || !activeElem) return;
+  if (!container || !wrapper) return;
 
   const W = container.clientWidth;
   const H = container.clientHeight;
+  const W_c = wrapper.clientWidth;
+  const H_c = wrapper.clientHeight;
 
-  const x = viewX * W;
-  const y = viewY * H;
+  if (W === 0 || H === 0 || W_c === 0 || H_c === 0) return;
+
+  const x = viewX * W_c;
+  const y = viewY * H_c;
   const s = zoomScale;
 
   let tx = W / 2 - x * s;
   let ty = H / 2 - y * s;
 
-  const minTx = W * (1 - s);
-  const maxTx = 0;
-  const minTy = H * (1 - s);
-  const maxTy = 0;
+  const offsetX = (W - W_c) / 2;
+  const offsetY = (H - H_c) / 2;
 
-  tx = Math.max(minTx, Math.min(maxTx, tx));
-  ty = Math.max(minTy, Math.min(maxTy, ty));
+  let absolute_tx = offsetX + tx;
+  let absolute_ty = offsetY + ty;
+
+  if (W_c * s > W) {
+    absolute_tx = Math.max(W - W_c * s, Math.min(0, absolute_tx));
+  } else {
+    absolute_tx = (W - W_c * s) / 2;
+  }
+
+  if (H_c * s > H) {
+    absolute_ty = Math.max(H - H_c * s, Math.min(0, absolute_ty));
+  } else {
+    absolute_ty = (H - H_c * s) / 2;
+  }
 
   const targetCrop = {
-    x: -tx / (W * s),
-    y: -ty / (H * s),
-    w: 1 / s,
-    h: 1 / s,
+    x: Math.max(0, Math.min(1, -absolute_tx / (W_c * s))),
+    y: Math.max(0, Math.min(1, -absolute_ty / (H_c * s))),
+    w: Math.max(0, Math.min(1, W / (W_c * s))),
+    h: Math.max(0, Math.min(1, H / (H_c * s))),
   };
 
   currentTargetCrop = targetCrop;
@@ -1536,57 +1673,86 @@ function updateScreenTransform(sendToServer = true) {
 
 function renderCssTransform() {
   const container = document.getElementById("screen-stream-container");
+  const wrapper = document.getElementById("screen-stream-content-wrapper");
+  const content = document.getElementById("screen-stream-content");
   const activeElem = document.getElementById("screen-stream-video");
 
-  if (!container || !activeElem) return;
+  if (!container || !wrapper || !content || !activeElem) return;
 
   const W = container.clientWidth;
   const H = container.clientHeight;
+  const W_c = wrapper.clientWidth;
+  const H_c = wrapper.clientHeight;
 
-  // Retrieve the delayed state representing what is CURRENTLY rendered on screen.
-  // 1000ms delay matches playoutDelayHint
-  const delayedState = getDelayedState(1000);
-  const frameCrop = delayedState.crop;
+  if (W === 0 || H === 0 || W_c === 0 || H_c === 0) return;
 
-  const mobileCrop = currentTargetCrop;
+  const x = viewX * W_c;
+  const y = viewY * H_c;
+  const s = zoomScale;
 
-  // Calculate CSS transform based on the difference between the frame crop and the mobile target crop.
-  // This decays to (0,0) and scale 1 organically as the frames catch up, without requiring timeout resets.
-  const S_css = (frameCrop.w || 1) / (mobileCrop.w || 1);
-  const dx = mobileCrop.x - frameCrop.x;
-  const dy = mobileCrop.y - frameCrop.y;
-  const dx_rel = dx / (frameCrop.w || 1);
-  const dy_rel = dy / (frameCrop.h || 1);
-  const tx_css = -dx_rel * W * S_css;
-  const ty_css = -dy_rel * H * S_css;
+  let tx = W / 2 - x * s;
+  let ty = H / 2 - y * s;
 
-  activeElem.style.transformOrigin = "0 0";
-  activeElem.style.transform = `translate(${tx_css}px, ${ty_css}px) scale(${S_css})`;
+  const offsetX = (W - W_c) / 2;
+  const offsetY = (H - H_c) / 2;
 
+  let absolute_tx = offsetX + tx;
+  let absolute_ty = offsetY + ty;
+
+  if (W_c * s > W) {
+    absolute_tx = Math.max(W - W_c * s, Math.min(0, absolute_tx));
+  } else {
+    absolute_tx = (W - W_c * s) / 2;
+  }
+
+  if (H_c * s > H) {
+    absolute_ty = Math.max(H - H_c * s, Math.min(0, absolute_ty));
+  } else {
+    absolute_ty = (H - H_c * s) / 2;
+  }
+
+  tx = absolute_tx - offsetX;
+  ty = absolute_ty - offsetY;
+
+  // Apply camera transform to the content container
+  content.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+
+  // Retrieve the crop region representing the frame currently displayed on screen.
+  // Prefer using requestVideoFrameCallback metadata to find the exact frame's crop region,
+  // falling back to getDelayedState(1000) if metadata is not available yet.
+  let frameCrop;
+  if (lastFrameMetadata) {
+    if (lastFrameMetadata.rtpTimestamp !== undefined) {
+      frameCrop = getFrameCropFromRtpTimestamp(lastFrameMetadata.rtpTimestamp, lastFrameMetadata.mediaTime);
+    } else {
+      frameCrop = getFrameCropFromMediaTime(lastFrameMetadata.mediaTime);
+    }
+  } else {
+    frameCrop = getDelayedState(1000).crop;
+  }
+
+  // Update video element position and scale relative to the virtual desktop
+  activeElem.style.left = `${frameCrop.x * 100}%`;
+  activeElem.style.top = `${frameCrop.y * 100}%`;
+  activeElem.style.width = `${frameCrop.w * 100}%`;
+  activeElem.style.height = `${frameCrop.h * 100}%`;
+
+  // Log synchronization details occasionally to assist in debugging
+  if (lastFrameMetadata && lastFrameMetadata.presentedFrames % 100 === 0) {
+    console.log(
+      `Sync: rtpTimestamp=${lastFrameMetadata.rtpTimestamp}, mediaTime=${lastFrameMetadata.mediaTime.toFixed(3)}, rtpOffset=${rtpTimestampOffset}, matchedCrop=x:${frameCrop.x.toFixed(3)} y:${frameCrop.y.toFixed(3)}`
+    );
+  }
+
+  // Position the cursor relative to the virtual desktop
   const cursorElem = document.getElementById("screen-stream-cursor");
   if (cursorElem) {
     if (container.style.display === "none") {
       cursorElem.style.display = "none";
     } else {
-      // Position the cursor relative to the frame crop position
-      const x_stream = (normX - frameCrop.x) / (frameCrop.w || 1);
-      const y_stream = (normY - frameCrop.y) / (frameCrop.h || 1);
-
-      if (x_stream < 0 || x_stream > 1 || y_stream < 0 || y_stream > 1) {
-        cursorElem.style.display = "none";
-      } else {
-        const vW = activeElem.offsetWidth;
-        const vH = activeElem.offsetHeight;
-        if (vW === 0 || vH === 0) {
-          cursorElem.style.display = "none";
-        } else {
-          cursorElem.style.display = "block";
-          const left = activeElem.offsetLeft + tx_css + x_stream * vW * S_css;
-          const top = activeElem.offsetTop + ty_css + y_stream * vH * S_css;
-          cursorElem.style.left = `${Math.round(left)}px`;
-          cursorElem.style.top = `${Math.round(top)}px`;
-        }
-      }
+      cursorElem.style.display = "block";
+      cursorElem.style.left = `${normX * 100}%`;
+      cursorElem.style.top = `${normY * 100}%`;
     }
   }
 }
@@ -1616,6 +1782,30 @@ if (is_mobile) {
         }
       }, 120);
     });
+  }
+
+  if (window.api.onScreenBgUpdated) {
+    window.api.onScreenBgUpdated(({ bg }) => {
+      const bgImg = document.getElementById("screen-stream-bg");
+      if (bgImg) {
+        bgImg.src = bg;
+        bgImg.style.display = "block";
+      }
+    });
+  }
+
+  // Set up the requestVideoFrameCallback watcher to capture video frame presentation timestamps
+  const videoElem = document.getElementById("screen-stream-video");
+  if (videoElem) {
+    const updateFrameMetadata = (now, metadata) => {
+      lastFrameMetadata = metadata;
+      if (videoElem.requestVideoFrameCallback) {
+        videoElem.requestVideoFrameCallback(updateFrameMetadata);
+      }
+    };
+    if (videoElem.requestVideoFrameCallback) {
+      videoElem.requestVideoFrameCallback(updateFrameMetadata);
+    }
   }
 
   // Start the 60fps local transform & cursor update loop
@@ -1698,6 +1888,8 @@ if (!is_mobile) {
           pc: null,
           crop: { x: 0, y: 0, w: 1, h: 1 },
           stopFrameLoop: null,
+          bgInterval: null,
+          inputChannel: null,
         };
         desktopConnections.set(socketId, connObj);
 
@@ -1712,6 +1904,7 @@ if (!is_mobile) {
           ordered: false,
           maxRetransmits: 0,
         });
+        connObj.inputChannel = inputChannel;
 
         inputChannel.onmessage = (msgEvent) => {
           try {
@@ -1809,6 +2002,19 @@ if (!is_mobile) {
               options.displayHeight = targetH;
 
               const croppedFrame = new VideoFrame(frame, options);
+              if (connObj.inputChannel && connObj.inputChannel.readyState === "open") {
+                try {
+                  connObj.inputChannel.send(
+                    JSON.stringify({
+                      type: "frame-crop",
+                      timestamp: frame.timestamp,
+                      crop: { x: crop.x, y: crop.y, w: crop.w, h: crop.h },
+                    })
+                  );
+                } catch (e) {
+                  console.error("Desktop WebRTC: Failed to send frame crop via data channel:", e);
+                }
+              }
               await writer.write(croppedFrame);
               frame.close();
             }
@@ -1823,6 +2029,34 @@ if (!is_mobile) {
         }
 
         processFrames();
+
+        function sendBgScreenshot() {
+          if (
+            window.desktopVideoElement &&
+            window.desktopVideoElement.readyState >= 2
+          ) {
+            if (!window.desktopBgCanvas) {
+              window.desktopBgCanvas = document.createElement("canvas");
+            }
+            const canvas = window.desktopBgCanvas;
+            const video = window.desktopVideoElement;
+            if (video.videoWidth > 0 && video.videoHeight > 0) {
+              canvas.width = 480;
+              canvas.height = Math.round(
+                480 * (video.videoHeight / video.videoWidth),
+              );
+              const ctx = canvas.getContext("2d");
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.4);
+              if (window.api.sendScreenBg) {
+                window.api.sendScreenBg(socketId, jpegDataUrl);
+              }
+            }
+          }
+        }
+
+        setTimeout(sendBgScreenshot, 1000);
+        connObj.bgInterval = setInterval(sendBgScreenshot, 5000);
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {
@@ -1888,6 +2122,7 @@ if (!is_mobile) {
       if (conn) {
         if (conn.pc) conn.pc.close();
         if (conn.stopFrameLoop) conn.stopFrameLoop();
+        if (conn.bgInterval) clearInterval(conn.bgInterval);
         desktopConnections.delete(socketId);
       }
       const pc = desktopPeerConnections.get(socketId);
@@ -1959,6 +2194,24 @@ if (!is_mobile) {
             if (channel.label === "mouseInput") {
               mobileInputChannel = channel;
               logMobileEvent("log", "Mobile WebRTC: Input channel connected");
+
+              channel.onmessage = (msgEvent) => {
+                try {
+                  const data = JSON.parse(msgEvent.data);
+                  if (data.type === "frame-crop") {
+                    receivedFrameCrops.push({
+                      timestamp: data.timestamp,
+                      crop: data.crop,
+                      receiveTime: Date.now(),
+                    });
+                    if (receivedFrameCrops.length > 300) {
+                      receivedFrameCrops.shift();
+                    }
+                  }
+                } catch (e) {
+                  // ignore
+                }
+              };
             }
           };
 
@@ -2032,6 +2285,7 @@ if (!is_mobile) {
             const videoElem = document.getElementById("screen-stream-video");
             if (videoElem) {
               videoElem.srcObject = event.streams[0];
+              streamStartTime = Date.now();
               videoElem
                 .play()
                 .catch((err) =>

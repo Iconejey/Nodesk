@@ -258,6 +258,10 @@
               socketPromise.then((socket) =>
                 socket.on("stream-crop-updated", callback),
               ),
+            onScreenBgUpdated: (callback) =>
+              socketPromise.then((socket) =>
+                socket.on("screen-bg-updated", callback),
+              ),
             onConnect: (callback) => {
               window.api.onConnectCallback = callback;
             },
@@ -295,8 +299,13 @@
   </head>
   <body>
     <div id="screen-stream-container">
-      <video id="screen-stream-video" autoplay playsinline muted></video>
-      <div id="screen-stream-cursor"></div>
+      <div id="screen-stream-content-wrapper">
+        <div id="screen-stream-content">
+          <img id="screen-stream-bg" />
+          <video id="screen-stream-video" autoplay playsinline muted></video>
+          <div id="screen-stream-cursor"></div>
+        </div>
+      </div>
     </div>
     <terminal-chat class="mode-full" id="terminal-chat-container">
       <!-- Dynamically appended chat history will go here -->

@@ -3,6 +3,10 @@ const { app, BrowserWindow, Menu, ipcMain, shell } = require("electron");
 // Automatically disable GPU memory buffers for video capture on Linux to prevent EGL/DMA-BUF format mismatch errors during screen sharing
 if (process.platform === "linux") {
   app.commandLine.appendSwitch("disable-video-capture-use-gpu-memory-buffer");
+  app.commandLine.appendSwitch("ignore-gpu-blocklist");
+  app.commandLine.appendSwitch("enable-gpu-rasterization");
+  app.commandLine.appendSwitch("enable-features", "VaapiVideoDecoder,VaapiVideoEncoder,CanvasOopRasterization");
+  app.commandLine.appendSwitch("disable-features", "ZeroCopyVideoCapture,UseChromeOSDirectVideoDecoder");
 }
 
 const { spawn, exec } = require("child_process");
@@ -19,6 +23,35 @@ const active_windows = new Map();
 let web_server = null;
 let io_server = null;
 let server_port = 0;
+
+function sendHyprlandCommand(cmd) {
+  if (
+    !process.env.XDG_RUNTIME_DIR ||
+    !process.env.HYPRLAND_INSTANCE_SIGNATURE
+  ) {
+    return;
+  }
+  const net = require("net");
+  const socketPath = path.join(
+    process.env.XDG_RUNTIME_DIR,
+    "hypr",
+    process.env.HYPRLAND_INSTANCE_SIGNATURE,
+    ".socket.sock",
+  );
+  try {
+    const client = net.createConnection(socketPath, () => {
+      client.write(cmd);
+    });
+    client.on("data", () => {
+      client.end();
+    });
+    client.on("error", (err) => {
+      // ignore
+    });
+  } catch (e) {
+    // ignore
+  }
+}
 
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
@@ -55,9 +88,11 @@ function startMobileServer() {
 
   io_server.on("connection", (socket) => {
     let joinedRoom = null;
-    let screen_stream_interval = null;
-    let is_streaming_screen = false;
     let current_crop = { x: 0, y: 0, w: 1, h: 1 };
+    let cursor_sync_interval = null;
+    let last_cursor_pos = { x: 0, y: 0 };
+    let is_streaming_screen = false;
+    let screen_stream_interval = null;
 
     const getWindowData = (windowId) => {
       const wId = parseInt(windowId, 10);
@@ -381,20 +416,72 @@ function startMobileServer() {
         });
       }
 
-      // Query initial cursor position to sync with mobile
-      exec("hyprctl cursorpos", (err, stdout) => {
-        if (!err && stdout) {
-          const parts = stdout.trim().split(/,\s*/);
-          if (parts.length === 2) {
-            const curX = parseFloat(parts[0]);
-            const curY = parseFloat(parts[1]);
-            const { screen } = require("electron");
-            const primaryDisplay = screen.getPrimaryDisplay();
-            const { width, height } = primaryDisplay.size;
-            socket.emit("cursor-sync", { x: curX / width, y: curY / height });
+      if (cursor_sync_interval) {
+        clearInterval(cursor_sync_interval);
+      }
+      cursor_sync_interval = setInterval(() => {
+        exec("hyprctl cursorpos", (err, stdout) => {
+          if (!err && stdout) {
+            const parts = stdout.trim().split(/,\s*/);
+            if (parts.length === 2) {
+              const curX = parseFloat(parts[0]);
+              const curY = parseFloat(parts[1]);
+              const { screen } = require("electron");
+              const primaryDisplay = screen.getPrimaryDisplay();
+              const { width, height } = primaryDisplay.size;
+              const xNorm = curX / width;
+              const yNorm = curY / height;
+              if (Math.abs(xNorm - last_cursor_pos.x) > 0.002 || Math.abs(yNorm - last_cursor_pos.y) > 0.002) {
+                last_cursor_pos = { x: xNorm, y: yNorm };
+                socket.emit("cursor-sync", { x: xNorm, y: yNorm });
+              }
+            }
           }
-        }
-      });
+        });
+      }, 100);
+    });
+
+    socket.on("request-fallback-stream", () => {
+      console.log("Socket client requested fallback screenshot stream");
+      if (screen_stream_interval) {
+        clearTimeout(screen_stream_interval);
+      }
+      is_streaming_screen = true;
+
+      let isCapturing = false;
+      const captureFrame = () => {
+        if (!is_streaming_screen) return;
+        if (isCapturing) return;
+        isCapturing = true;
+
+        const { screen } = require("electron");
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { x, y, width, height } = primaryDisplay.bounds;
+
+        const finalX = Math.round(x + current_crop.x * width);
+        const finalY = Math.round(y + current_crop.y * height);
+        const finalW = Math.round(current_crop.w * width);
+        const finalH = Math.round(current_crop.h * height);
+
+        const geomStr = `${finalX},${finalY} ${finalW}x${finalH}`;
+        const cmd = `grim -g "${geomStr}" - | ffmpeg -y -i - -vf "scale='min(1920,iw)':-2" -f image2pipe -vcodec mjpeg -`;
+
+        exec(cmd, { encoding: "buffer", maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+          isCapturing = false;
+          if (is_streaming_screen) {
+            screen_stream_interval = setTimeout(captureFrame, 150);
+          }
+          if (err) {
+            console.error("Fallback screen capture failed:", err);
+            return;
+          }
+          const base64Data = stdout.toString("base64");
+          const dataUrl = `data:image/jpeg;base64,${base64Data}`;
+          socket.emit("screen-frame", { dataUrl });
+        });
+      };
+
+      captureFrame();
     });
 
     socket.on("mouse-move", ({ x, y }) => {
@@ -403,7 +490,7 @@ function startMobileServer() {
       const { width, height } = primaryDisplay.size;
       const absX = Math.round(x * width);
       const absY = Math.round(y * height);
-      exec(`hyprctl dispatch movecursor ${absX} ${absY}`);
+      sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
     });
 
     socket.on("mouse-click", ({ x, y }) => {
@@ -412,18 +499,17 @@ function startMobileServer() {
       const { width, height } = primaryDisplay.size;
       const absX = Math.round(x * width);
       const absY = Math.round(y * height);
-      exec(`hyprctl dispatch movecursor ${absX} ${absY}`, (err) => {
-        exec("ydotool click 0xC0", (ydotoolErr) => {
-          if (ydotoolErr) {
-            exec("xdotool click 1", (xdotoolErr) => {
-              if (xdotoolErr) {
-                console.error(
-                  "Failed to simulate mouse click: neither ydotool nor xdotool succeeded.",
-                );
-              }
-            });
-          }
-        });
+      sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
+      exec("ydotool click 0xC0", (ydotoolErr) => {
+        if (ydotoolErr) {
+          exec("xdotool click 1", (xdotoolErr) => {
+            if (xdotoolErr) {
+              console.error(
+                "Failed to simulate mouse click: neither ydotool nor xdotool succeeded.",
+              );
+            }
+          });
+        }
       });
     });
 
@@ -449,101 +535,16 @@ function startMobileServer() {
       }
     });
 
-    socket.on("request-fallback-stream", () => {
-      console.log("Socket client requested fallback frame-based screen stream");
-      is_streaming_screen = true;
-      if (screen_stream_interval) {
-        clearTimeout(screen_stream_interval);
-      }
-
-      const fallbackCapture = () => {
-        if (!is_streaming_screen) return;
-        const { desktopCapturer } = require("electron");
-        desktopCapturer
-          .getSources({
-            types: ["screen"],
-            thumbnailSize: { width: 1280, height: 720 },
-          })
-          .then((sources) => {
-            if (sources.length > 0 && is_streaming_screen) {
-              const source = sources[0];
-              const jpeg_buffer = source.thumbnail.toJPEG(80);
-              const base64_str = jpeg_buffer.toString("base64");
-              const data_url = `data:image/jpeg;base64,${base64_str}`;
-              socket.emit("screen-frame", { dataUrl: data_url });
-            }
-            if (is_streaming_screen) {
-              screen_stream_interval = setTimeout(captureAndSend, 0);
-            }
-          })
-          .catch((err) => {
-            console.error("Screen capture failed:", err);
-            if (is_streaming_screen) {
-              screen_stream_interval = setTimeout(captureAndSend, 1000);
-            }
-          });
-      };
-
-      const captureAndSend = () => {
-        if (!is_streaming_screen) return;
-        if (process.platform === "linux") {
-          const { screen } = require("electron");
-          const primaryDisplay = screen.getPrimaryDisplay();
-          const { width, height } = primaryDisplay.size;
-          const scale = primaryDisplay.scaleFactor;
-          const screenW = Math.round(width * scale);
-          const screenH = Math.round(height * scale);
-
-          const crop = current_crop || { x: 0, y: 0, w: 1, h: 1 };
-          const pixelX = Math.round(crop.x * screenW);
-          const pixelY = Math.round(crop.y * screenH);
-          let pixelW = Math.round(crop.w * screenW);
-          let pixelH = Math.round(crop.h * screenH);
-
-          if (pixelW <= 0) pixelW = screenW;
-          if (pixelH <= 0) pixelH = screenH;
-
-          const geometry = `${pixelX},${pixelY} ${pixelW}x${pixelH}`;
-
-          let vfFilter = "";
-          const maxW = 1920;
-          if (pixelW > maxW) {
-            vfFilter = `-vf scale=${maxW}:-1`;
-          }
-
-          const cmd = `grim -g "${geometry}" -t ppm - | ffmpeg -y -f image2pipe -vcodec ppm -i - ${vfFilter} -q:v 10 -f image2pipe -`;
-
-          const { exec } = require("child_process");
-          exec(
-            cmd,
-            { encoding: "buffer", maxBuffer: 10 * 1024 * 1024 },
-            (err, stdout, stderr) => {
-              if (!err && stdout && stdout.length > 0 && is_streaming_screen) {
-                const base64_str = stdout.toString("base64");
-                const data_url = `data:image/jpeg;base64,${base64_str}`;
-                socket.emit("screen-frame", { dataUrl: data_url });
-                if (is_streaming_screen) {
-                  screen_stream_interval = setTimeout(captureAndSend, 0);
-                }
-              } else {
-                fallbackCapture();
-              }
-            },
-          );
-        } else {
-          fallbackCapture();
-        }
-      };
-
-      captureAndSend();
-    });
-
     socket.on("stop-screen-stream", () => {
       console.log("Socket client requested screen stream stop");
       is_streaming_screen = false;
       if (screen_stream_interval) {
         clearTimeout(screen_stream_interval);
         screen_stream_interval = null;
+      }
+      if (cursor_sync_interval) {
+        clearInterval(cursor_sync_interval);
+        cursor_sync_interval = null;
       }
       const data = getWindowData(null);
       if (data) {
@@ -559,6 +560,10 @@ function startMobileServer() {
       if (screen_stream_interval) {
         clearTimeout(screen_stream_interval);
         screen_stream_interval = null;
+      }
+      if (cursor_sync_interval) {
+        clearInterval(cursor_sync_interval);
+        cursor_sync_interval = null;
       }
       const data = getWindowData(null);
       if (data) {

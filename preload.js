@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("show-qrcode", (event, info) => callback(info)),
   onHideQrCode: (callback) =>
     ipcRenderer.on("hide-qrcode", (event) => callback()),
+  onPinnedDirsUpdated: (callback) =>
+    ipcRenderer.on("pinned-dirs-updated", (event, info) => callback(info)),
   onShellCommandStart: (callback) =>
     ipcRenderer.on("shell-command-start", (event, info) => callback(info)),
   onAgentPromptStart: (callback) =>

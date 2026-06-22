@@ -689,15 +689,27 @@ function submitInput(text, usePro = false) {
             clearTimeout(webrtcTimeout);
             webrtcTimeout = null;
           }
+
           const videoElem = document.getElementById("screen-stream-video");
           if (videoElem) {
             videoElem.srcObject = null;
+            videoElem.style.display = "none";
+            videoElem.classList.remove("waiting");
           }
+          const imgElem = document.getElementById("screen-stream-img");
+          if (imgElem) {
+            imgElem.src = "";
+            imgElem.style.display = "none";
+          }
+
+          container_elem.style.display = "none";
+          container_elem.classList.remove("waiting");
 
           appendTerminalSystemMessage("Screen stream stopped.");
           appendNewPromptBlock(current_cwd);
         } else {
           container_elem.style.display = "block";
+          container_elem.classList.add("waiting");
 
           // Reset crop and zoom variables
           currentStreamCrop = { x: 0, y: 0, w: 1, h: 1 };
@@ -706,11 +718,13 @@ function submitInput(text, usePro = false) {
           normY = 0.5;
           updateScreenTransform();
 
-          // Default to showing video element first during negotiation
           const img = document.getElementById("screen-stream-img");
           const video = document.getElementById("screen-stream-video");
           if (img) img.style.display = "none";
-          if (video) video.style.display = "block";
+          if (video) {
+            video.style.display = "block";
+            video.classList.add("waiting");
+          }
 
           if (window.api.startScreenStream) {
             window.api.startScreenStream();
@@ -1348,6 +1362,29 @@ function updateScreenTransform() {
 
   activeElem.style.transformOrigin = "0 0";
   activeElem.style.transform = `translate(${tx_css}px, ${ty_css}px) scale(${S_css})`;
+
+  const cursorElem = document.getElementById("screen-stream-cursor");
+  if (cursorElem) {
+    if (container.style.display === "none") {
+      cursorElem.style.display = "none";
+    } else {
+      const crop = currentStreamCrop || { x: 0, y: 0, w: 1, h: 1 };
+      const x_stream = (normX - crop.x) / crop.w;
+      const y_stream = (normY - crop.y) / crop.h;
+
+      if (x_stream < 0 || x_stream > 1 || y_stream < 0 || y_stream > 1) {
+        cursorElem.style.display = "none";
+      } else {
+        cursorElem.style.display = "block";
+        const vW = activeElem.offsetWidth;
+        const vH = activeElem.offsetHeight;
+        const left = activeElem.offsetLeft + tx_css + x_stream * vW * S_css;
+        const top = activeElem.offsetTop + ty_css + y_stream * vH * S_css;
+        cursorElem.style.left = `${Math.round(left)}px`;
+        cursorElem.style.top = `${Math.round(top)}px`;
+      }
+    }
+  }
 }
 
 // Sync initial cursor coordinates
@@ -2835,3 +2872,22 @@ window.api.onPinnedDirsUpdated((info) => {
   pinned_dirs_global = info.pinned_dirs;
   home_dir_global = info.home_dir;
 });
+
+// Setup event listeners on the video element to remove "waiting" class when the WebRTC stream actually starts playing
+(function() {
+  const videoElem = document.getElementById("screen-stream-video");
+  const containerElem = document.getElementById("screen-stream-container");
+  if (videoElem) {
+    const clearWaiting = () => {
+      if (videoElem.videoWidth > 0 && videoElem.videoHeight > 0) {
+        videoElem.classList.remove("waiting");
+        if (containerElem) {
+          containerElem.classList.remove("waiting");
+        }
+      }
+    };
+    videoElem.addEventListener("playing", clearWaiting);
+    videoElem.addEventListener("loadedmetadata", clearWaiting);
+    videoElem.addEventListener("canplay", clearWaiting);
+  }
+})();

@@ -226,10 +226,7 @@
               ),
             stopScreenStream: () =>
               socketPromise.then((socket) => socket.emit("stop-screen-stream")),
-            onScreenFrame: (callback) =>
-              socketPromise.then((socket) =>
-                socket.on("screen-frame", callback),
-              ),
+
             onWebRtcSignal: (callback) =>
               socketPromise.then((socket) =>
                 socket.on("webrtc-signal", callback),
@@ -238,10 +235,11 @@
               socketPromise.then((socket) =>
                 socket.emit("webrtc-signal", { signal }),
               ),
-            requestFallbackStream: () =>
+            sendMobileLog: (type, args) =>
               socketPromise.then((socket) =>
-                socket.emit("request-fallback-stream"),
+                socket.emit("mobile-log", { type, args }),
               ),
+
             onCursorSync: (callback) =>
               socketPromise.then((socket) =>
                 socket.on("cursor-sync", callback),
@@ -298,7 +296,6 @@
   <body>
     <div id="screen-stream-container">
       <video id="screen-stream-video" autoplay playsinline muted></video>
-      <img id="screen-stream-img" />
       <div id="screen-stream-cursor"></div>
     </div>
     <terminal-chat class="mode-full" id="terminal-chat-container">

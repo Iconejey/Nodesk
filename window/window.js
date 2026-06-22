@@ -1,5 +1,19 @@
 // Renderer process UI logic for Nono-Terminal
 const is_mobile = !window.api || !window.api.isElectron;
+
+function logMobileEvent(type, ...args) {
+  if (console[type]) {
+    console[type](...args);
+  } else {
+    console.log(...args);
+  }
+  if (is_mobile && window.api && window.api.sendMobileLog) {
+    const serializedArgs = args.map((a) =>
+      typeof a === "object" ? JSON.stringify(a) : String(a),
+    );
+    window.api.sendMobileLog(type, serializedArgs);
+  }
+}
 let command_history = [];
 let history_index = -1;
 let temp_input_text = "";
@@ -666,7 +680,8 @@ function submitInput(text, usePro = false) {
 
       const container_elem = document.getElementById("screen-stream-container");
       if (container_elem) {
-        const is_visible = container_elem.style.display !== "none";
+        const is_visible =
+          window.getComputedStyle(container_elem).display !== "none";
         if (is_visible) {
           container_elem.style.display = "none";
           if (window.api.stopScreenStream) {
@@ -675,15 +690,26 @@ function submitInput(text, usePro = false) {
 
           // Reset crop and zoom variables
           currentStreamCrop = { x: 0, y: 0, w: 1, h: 1 };
+          currentTargetCrop = { x: 0, y: 0, w: 1, h: 1 };
+          stateHistory = [
+            {
+              time: Date.now(),
+              crop: { x: 0, y: 0, w: 1, h: 1 },
+              cursor: { x: 0.5, y: 0.5 },
+            },
+          ];
           zoomScale = 1.0;
           normX = 0.5;
           normY = 0.5;
+          viewX = 0.5;
+          viewY = 0.5;
           updateScreenTransform();
 
           // WebRTC Mobile cleanup
           if (mobilePeerConnection) {
             mobilePeerConnection.close();
             mobilePeerConnection = null;
+            mobileInputChannel = null;
           }
           if (webrtcTimeout) {
             clearTimeout(webrtcTimeout);
@@ -695,11 +721,6 @@ function submitInput(text, usePro = false) {
             videoElem.srcObject = null;
             videoElem.style.display = "none";
             videoElem.classList.remove("waiting");
-          }
-          const imgElem = document.getElementById("screen-stream-img");
-          if (imgElem) {
-            imgElem.src = "";
-            imgElem.style.display = "none";
           }
 
           container_elem.style.display = "none";
@@ -713,14 +734,22 @@ function submitInput(text, usePro = false) {
 
           // Reset crop and zoom variables
           currentStreamCrop = { x: 0, y: 0, w: 1, h: 1 };
+          currentTargetCrop = { x: 0, y: 0, w: 1, h: 1 };
+          stateHistory = [
+            {
+              time: Date.now(),
+              crop: { x: 0, y: 0, w: 1, h: 1 },
+              cursor: { x: 0.5, y: 0.5 },
+            },
+          ];
           zoomScale = 1.0;
           normX = 0.5;
           normY = 0.5;
+          viewX = 0.5;
+          viewY = 0.5;
           updateScreenTransform();
 
-          const img = document.getElementById("screen-stream-img");
           const video = document.getElementById("screen-stream-video");
-          if (img) img.style.display = "none";
           if (video) {
             video.style.display = "block";
             video.classList.add("waiting");
@@ -730,7 +759,7 @@ function submitInput(text, usePro = false) {
             window.api.startScreenStream();
           }
 
-          // Set a watchdog timeout: if WebRTC isn't connected in 3 seconds, request fallback image stream
+          // Set a watchdog timeout: if WebRTC isn't connected in 5 seconds, show error and stop stream
           if (webrtcTimeout) clearTimeout(webrtcTimeout);
           webrtcTimeout = setTimeout(() => {
             if (
@@ -738,19 +767,25 @@ function submitInput(text, usePro = false) {
               (mobilePeerConnection.iceConnectionState !== "connected" &&
                 mobilePeerConnection.iceConnectionState !== "completed")
             ) {
-              console.log(
-                "Mobile WebRTC: Connection timeout, requesting fallback JPEG stream",
+              logMobileEvent(
+                "log",
+                "Mobile WebRTC: Connection timeout, stopping screen share",
               );
               appendTerminalSystemMessage(
-                "WebRTC connection timed out. Falling back to native screen capture stream...",
+                "Error: WebRTC connection timed out. Screen sharing failed.",
+                true,
               );
-              if (img) img.style.display = "block";
-              if (video) video.style.display = "none";
-              if (window.api.requestFallbackStream) {
-                window.api.requestFallbackStream();
+              container_elem.style.display = "none";
+              if (window.api.stopScreenStream) {
+                window.api.stopScreenStream();
+              }
+              if (mobilePeerConnection) {
+                mobilePeerConnection.close();
+                mobilePeerConnection = null;
+                mobileInputChannel = null;
               }
             }
-          }, 3000);
+          }, 8000);
 
           appendTerminalSystemMessage("Screen stream started.");
           appendNewPromptBlock(current_cwd);
@@ -942,6 +977,10 @@ window.addEventListener("DOMContentLoaded", () => {
   document.addEventListener("click", (e) => {
     if (active_editor_file_path) return;
     if (window.getSelection().toString() !== "") return;
+
+    // Do not autofocus the input if clicking/interacting with the video stream container
+    if (e.target.closest("#screen-stream-container")) return;
+
     if (
       e.target.closest(
         'a, button, summary, details, .output-placeholder, [contenteditable="true"], textarea',
@@ -983,7 +1022,9 @@ window.addEventListener("DOMContentLoaded", () => {
   const active_input = document.getElementById("active-input");
   if (active_input) {
     setupInputListeners(active_input);
-    active_input.focus();
+    if (!is_mobile) {
+      active_input.focus();
+    }
   }
 
   // Setup Editor Event Listeners
@@ -1105,6 +1146,7 @@ window.addEventListener("DOMContentLoaded", () => {
       "touchstart",
       (e) => {
         e.preventDefault(); // Prevent default mobile browser pinch-zoom / double-tap zoom
+        lastTouchTime = Date.now();
         if (e.touches.length === 1) {
           isDragging = true;
           isPinching = false;
@@ -1112,6 +1154,8 @@ window.addEventListener("DOMContentLoaded", () => {
           startTouchY = e.touches[0].clientY;
           startNormX = normX;
           startNormY = normY;
+          startViewX = viewX;
+          startViewY = viewY;
         } else if (e.touches.length === 2) {
           isPinching = true;
           isDragging = false;
@@ -1127,6 +1171,7 @@ window.addEventListener("DOMContentLoaded", () => {
     container.addEventListener(
       "touchmove",
       (e) => {
+        lastTouchTime = Date.now();
         if (isDragging && e.touches.length === 1) {
           e.preventDefault(); // Prevent default mobile page scrolling
           const clientX = e.touches[0].clientX;
@@ -1136,13 +1181,31 @@ window.addEventListener("DOMContentLoaded", () => {
           const W = container.clientWidth;
           const H = container.clientHeight;
           const sensitivity = 1.0;
-          normX = startNormX + (dx / (W * zoomScale)) * sensitivity;
-          normY = startNormY + (dy / (H * zoomScale)) * sensitivity;
-          normX = Math.max(0, Math.min(1, normX));
-          normY = Math.max(0, Math.min(1, normY));
 
-          if (window.api.sendMouseMove) {
-            window.api.sendMouseMove({ x: normX, y: normY });
+          const dx_norm = (dx / (W * zoomScale)) * sensitivity;
+          const dy_norm = (dy / (H * zoomScale)) * sensitivity;
+
+          normX = Math.max(0, Math.min(1, startNormX + dx_norm));
+          normY = Math.max(0, Math.min(1, startNormY + dy_norm));
+          viewX = Math.max(0, Math.min(1, startViewX + dx_norm));
+          viewY = Math.max(0, Math.min(1, startViewY + dy_norm));
+
+          const now = Date.now();
+          if (now - lastTouchMoveTime >= 33) {
+            lastTouchMoveTime = now;
+            if (
+              mobileInputChannel &&
+              mobileInputChannel.readyState === "open"
+            ) {
+              mobileInputChannel.send(
+                JSON.stringify({
+                  type: "move",
+                  coords: { x: normX, y: normY },
+                }),
+              );
+            } else if (window.api.sendMouseMove) {
+              window.api.sendMouseMove({ x: normX, y: normY });
+            }
           }
           updateScreenTransform();
         } else if (isPinching && e.touches.length === 2) {
@@ -1162,6 +1225,7 @@ window.addEventListener("DOMContentLoaded", () => {
 
     container.addEventListener("touchend", (e) => {
       e.preventDefault();
+      lastTouchTime = Date.now();
       if (isDragging) {
         isDragging = false;
         const now = Date.now();
@@ -1172,8 +1236,21 @@ window.addEventListener("DOMContentLoaded", () => {
             Math.pow(endTouchY - startTouchY, 2),
         );
         if (moveDistance < 10) {
-          if (window.api.sendMouseClick) {
+          if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+            mobileInputChannel.send(
+              JSON.stringify({ type: "click", coords: { x: normX, y: normY } }),
+            );
+          } else if (window.api.sendMouseClick) {
             window.api.sendMouseClick({ x: normX, y: normY });
+          }
+        } else {
+          // Send final coordinate update to guarantee cursor accuracy
+          if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+            mobileInputChannel.send(
+              JSON.stringify({ type: "move", coords: { x: normX, y: normY } }),
+            );
+          } else if (window.api.sendMouseMove) {
+            window.api.sendMouseMove({ x: normX, y: normY });
           }
         }
         lastTapTime = now;
@@ -1276,58 +1353,159 @@ if (window.api.onDisconnect) {
   });
 }
 
-if (window.api.onScreenFrame) {
-  window.api.onScreenFrame(({ dataUrl }) => {
-    const img = document.getElementById("screen-stream-img");
-    const video = document.getElementById("screen-stream-video");
-    if (img) {
-      img.style.display = "block";
-      img.src = dataUrl;
-    }
-    if (video) {
-      video.style.display = "none";
-    }
-  });
-}
-
 // WebRTC Screen Streaming Logic
 
 let localScreenStream = null;
 let desktopPeerConnections = new Map(); // socketId -> RTCPeerConnection
 let mobilePeerConnection = null;
+let mobileInputChannel = null;
 let webrtcTimeout = null;
 let currentStreamCrop = { x: 0, y: 0, w: 1, h: 1 };
-let desktopConnections = new Map(); // socketId -> { pc, canvas, ctx, crop, animationFrameId }
+let currentTargetCrop = { x: 0, y: 0, w: 1, h: 1 };
+let stateHistory = [
+  {
+    time: Date.now(),
+    crop: { x: 0, y: 0, w: 1, h: 1 },
+    cursor: { x: 0.5, y: 0.5 },
+  },
+];
+
+function pushStateHistory(crop, cursor) {
+  const now = Date.now();
+  if (stateHistory.length > 0) {
+    const last = stateHistory[stateHistory.length - 1];
+    if (now - last.time > 50) {
+      // Insert a constant-state entry just before now to represent the idle period
+      stateHistory.push({
+        time: now - 1,
+        crop: { ...last.crop },
+        cursor: { ...last.cursor },
+      });
+    }
+  }
+  stateHistory.push({
+    time: now,
+    crop: { ...crop },
+    cursor: { ...cursor },
+  });
+  while (stateHistory.length > 1 && stateHistory[0].time < now - 3000) {
+    stateHistory.shift();
+  }
+}
+
+function getDelayedState(delayMs = 1000) {
+  const targetTime = Date.now() - delayMs;
+  if (stateHistory.length === 0) {
+    return {
+      crop: currentStreamCrop || { x: 0, y: 0, w: 1, h: 1 },
+      cursor: { x: normX, y: normY },
+    };
+  }
+  if (targetTime <= stateHistory[0].time) {
+    return stateHistory[0];
+  }
+  if (targetTime >= stateHistory[stateHistory.length - 1].time) {
+    return stateHistory[stateHistory.length - 1];
+  }
+  for (let i = 0; i < stateHistory.length - 1; i++) {
+    if (
+      targetTime >= stateHistory[i].time &&
+      targetTime <= stateHistory[i + 1].time
+    ) {
+      const t0 = stateHistory[i].time;
+      const t1 = stateHistory[i + 1].time;
+      const ratio = (targetTime - t0) / (t1 - t0);
+      const c0 = stateHistory[i].crop;
+      const c1 = stateHistory[i + 1].crop;
+      const cur0 = stateHistory[i].cursor;
+      const cur1 = stateHistory[i + 1].cursor;
+      return {
+        crop: {
+          x: c0.x + (c1.x - c0.x) * ratio,
+          y: c0.y + (c1.y - c0.y) * ratio,
+          w: c0.w + (c1.w - c0.w) * ratio,
+          h: c0.h + (c1.h - c0.h) * ratio,
+        },
+        cursor: {
+          x: cur0.x + (cur1.x - cur0.x) * ratio,
+          y: cur0.y + (cur1.y - cur0.y) * ratio,
+        },
+      };
+    }
+  }
+  return stateHistory[stateHistory.length - 1];
+}
+
+let desktopConnections = new Map(); // socketId -> { pc, canvas, ctx, crop, stopFrameLoop }
 
 // Touch Navigation State
 let normX = 0.5;
 let normY = 0.5;
 let zoomScale = 1.0;
 
+let viewX = 0.5;
+let viewY = 0.5;
+
 let startTouchX = 0;
 let startTouchY = 0;
 let startNormX = 0.5;
 let startNormY = 0.5;
+let startViewX = 0.5;
+let startViewY = 0.5;
 let startDistance = 0;
 let startScale = 1.0;
 let isDragging = false;
 let isPinching = false;
 let lastTapTime = 0;
+let lastTouchMoveTime = 0;
+let lastTouchTime = 0;
 
-function updateScreenTransform() {
+let lastCropSentTime = 0;
+let cropPendingTimeout = null;
+let pendingCropData = null;
+
+function sendCropRegionThrottled(crop) {
+  pendingCropData = crop;
+  const now = Date.now();
+  const interval = 100; // send at most once every 100ms
+
+  if (now - lastCropSentTime >= interval) {
+    if (cropPendingTimeout) {
+      clearTimeout(cropPendingTimeout);
+      cropPendingTimeout = null;
+    }
+    performSendCrop();
+  } else {
+    if (!cropPendingTimeout) {
+      cropPendingTimeout = setTimeout(
+        () => {
+          cropPendingTimeout = null;
+          performSendCrop();
+        },
+        interval - (now - lastCropSentTime),
+      );
+    }
+  }
+}
+
+function performSendCrop() {
+  if (pendingCropData && is_mobile && window.api.sendCropRegion) {
+    window.api.sendCropRegion(pendingCropData);
+    lastCropSentTime = Date.now();
+  }
+}
+
+function updateScreenTransform(sendToServer = true) {
   const container = document.getElementById("screen-stream-container");
-  const activeElem =
-    document.getElementById("screen-stream-video").style.display !== "none"
-      ? document.getElementById("screen-stream-video")
-      : document.getElementById("screen-stream-img");
+  const activeElem = document.getElementById("screen-stream-video");
 
   if (!container || !activeElem) return;
 
   const W = container.clientWidth;
   const H = container.clientHeight;
 
-  const x = normX * W;
-  const y = normY * H;
+  const x = viewX * W;
+  const y = viewY * H;
   const s = zoomScale;
 
   let tx = W / 2 - x * s;
@@ -1348,15 +1526,37 @@ function updateScreenTransform() {
     h: 1 / s,
   };
 
-  if (is_mobile && window.api.sendCropRegion) {
-    window.api.sendCropRegion(targetCrop);
-  }
+  currentTargetCrop = targetCrop;
+  pushStateHistory(targetCrop, { x: normX, y: normY });
 
-  const S_css = currentStreamCrop.w / (targetCrop.w || 1);
-  const dx = targetCrop.x - currentStreamCrop.x;
-  const dy = targetCrop.y - currentStreamCrop.y;
-  const dx_rel = dx / (currentStreamCrop.w || 1);
-  const dy_rel = dy / (currentStreamCrop.h || 1);
+  if (sendToServer && is_mobile && window.api.sendCropRegion) {
+    sendCropRegionThrottled(targetCrop);
+  }
+}
+
+function renderCssTransform() {
+  const container = document.getElementById("screen-stream-container");
+  const activeElem = document.getElementById("screen-stream-video");
+
+  if (!container || !activeElem) return;
+
+  const W = container.clientWidth;
+  const H = container.clientHeight;
+
+  // Retrieve the delayed state representing what is CURRENTLY rendered on screen.
+  // 1000ms delay matches playoutDelayHint
+  const delayedState = getDelayedState(1000);
+  const frameCrop = delayedState.crop;
+
+  const mobileCrop = currentTargetCrop;
+
+  // Calculate CSS transform based on the difference between the frame crop and the mobile target crop.
+  // This decays to (0,0) and scale 1 organically as the frames catch up, without requiring timeout resets.
+  const S_css = (frameCrop.w || 1) / (mobileCrop.w || 1);
+  const dx = mobileCrop.x - frameCrop.x;
+  const dy = mobileCrop.y - frameCrop.y;
+  const dx_rel = dx / (frameCrop.w || 1);
+  const dy_rel = dy / (frameCrop.h || 1);
   const tx_css = -dx_rel * W * S_css;
   const ty_css = -dy_rel * H * S_css;
 
@@ -1368,20 +1568,24 @@ function updateScreenTransform() {
     if (container.style.display === "none") {
       cursorElem.style.display = "none";
     } else {
-      const crop = currentStreamCrop || { x: 0, y: 0, w: 1, h: 1 };
-      const x_stream = (normX - crop.x) / crop.w;
-      const y_stream = (normY - crop.y) / crop.h;
+      // Position the cursor relative to the frame crop position
+      const x_stream = (normX - frameCrop.x) / (frameCrop.w || 1);
+      const y_stream = (normY - frameCrop.y) / (frameCrop.h || 1);
 
       if (x_stream < 0 || x_stream > 1 || y_stream < 0 || y_stream > 1) {
         cursorElem.style.display = "none";
       } else {
-        cursorElem.style.display = "block";
         const vW = activeElem.offsetWidth;
         const vH = activeElem.offsetHeight;
-        const left = activeElem.offsetLeft + tx_css + x_stream * vW * S_css;
-        const top = activeElem.offsetTop + ty_css + y_stream * vH * S_css;
-        cursorElem.style.left = `${Math.round(left)}px`;
-        cursorElem.style.top = `${Math.round(top)}px`;
+        if (vW === 0 || vH === 0) {
+          cursorElem.style.display = "none";
+        } else {
+          cursorElem.style.display = "block";
+          const left = activeElem.offsetLeft + tx_css + x_stream * vW * S_css;
+          const top = activeElem.offsetTop + ty_css + y_stream * vH * S_css;
+          cursorElem.style.left = `${Math.round(left)}px`;
+          cursorElem.style.top = `${Math.round(top)}px`;
+        }
       }
     }
   }
@@ -1390,21 +1594,40 @@ function updateScreenTransform() {
 // Sync initial cursor coordinates
 if (window.api.onCursorSync) {
   window.api.onCursorSync(({ x, y }) => {
+    if (isDragging || isPinching || Date.now() - lastTouchTime < 1000) return;
     normX = x;
     normY = y;
-    updateScreenTransform();
   });
 }
 
 // Update position on orientation change / resize
 if (is_mobile) {
-  window.addEventListener("resize", updateScreenTransform);
+  window.addEventListener("resize", () => updateScreenTransform(true));
   if (window.api.onStreamCropUpdated) {
     window.api.onStreamCropUpdated(({ region }) => {
-      currentStreamCrop = region;
-      updateScreenTransform();
+      setTimeout(() => {
+        currentStreamCrop = region;
+        if (!isDragging && !isPinching && Date.now() - lastTouchTime > 1000) {
+          currentTargetCrop = region;
+          pushStateHistory(region, { x: normX, y: normY });
+          zoomScale = 1 / (region.w || 1);
+          viewX = region.x + region.w / 2;
+          viewY = region.y + region.h / 2;
+        }
+      }, 120);
     });
   }
+
+  // Start the 60fps local transform & cursor update loop
+  function step() {
+    renderCssTransform();
+    requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+function mungeSdpToForceH264(sdp) {
+  return sdp;
 }
 
 if (!is_mobile) {
@@ -1424,17 +1647,8 @@ if (!is_mobile) {
         if (desktopConnections.has(socketId)) {
           const conn = desktopConnections.get(socketId);
           if (conn.pc) conn.pc.close();
-          if (conn.animationFrameId)
-            cancelAnimationFrame(conn.animationFrameId);
+          if (conn.stopFrameLoop) conn.stopFrameLoop();
           desktopConnections.delete(socketId);
-        }
-
-        if (!window.desktopVideoElement) {
-          window.desktopVideoElement = document.createElement("video");
-          window.desktopVideoElement.muted = true;
-          window.desktopVideoElement.playsInline = true;
-          window.desktopVideoElement.style.display = "none";
-          document.body.appendChild(window.desktopVideoElement);
         }
 
         if (!localScreenStream) {
@@ -1460,58 +1674,32 @@ if (!is_mobile) {
               },
             },
           });
-          window.desktopVideoElement.srcObject = localScreenStream;
-          await window.desktopVideoElement.play();
         }
 
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
+        if (!window.desktopVideoElement) {
+          window.desktopVideoElement = document.createElement("video");
+          window.desktopVideoElement.muted = true;
+          window.desktopVideoElement.playsInline = true;
+          window.desktopVideoElement.style.display = "none";
+          document.body.appendChild(window.desktopVideoElement);
+        }
+
+        if (window.desktopVideoElement.srcObject !== localScreenStream) {
+          window.desktopVideoElement.srcObject = localScreenStream;
+          await window.desktopVideoElement.play().catch((e) => {
+            console.error(
+              "Desktop WebRTC: Failed to play local video element:",
+              e,
+            );
+          });
+        }
+
         const connObj = {
           pc: null,
-          canvas: canvas,
-          ctx: ctx,
           crop: { x: 0, y: 0, w: 1, h: 1 },
-          animationFrameId: null,
+          stopFrameLoop: null,
         };
         desktopConnections.set(socketId, connObj);
-
-        const drawLoop = () => {
-          if (!desktopConnections.has(socketId)) return;
-          const video = window.desktopVideoElement;
-          if (video && video.readyState >= video.HAVE_CURRENT_DATA) {
-            const videoW = video.videoWidth;
-            const videoH = video.videoHeight;
-            const crop = connObj.crop;
-
-            const sx = crop.x * videoW;
-            const sy = crop.y * videoH;
-            const sw = crop.w * videoW;
-            const sh = crop.h * videoH;
-
-            let targetW = sw;
-            let targetH = sh;
-            const maxW = 1920; // Scale down if too high resolution
-            if (targetW > maxW) {
-              const ratio = maxW / targetW;
-              targetW = maxW;
-              targetH = targetH * ratio;
-            }
-            targetW = Math.round(targetW);
-            targetH = Math.round(targetH);
-
-            if (targetW > 0 && targetH > 0) {
-              if (canvas.width !== targetW || canvas.height !== targetH) {
-                canvas.width = targetW;
-                canvas.height = targetH;
-              }
-              ctx.drawImage(video, sx, sy, sw, sh, 0, 0, targetW, targetH);
-            }
-          }
-          connObj.animationFrameId = requestAnimationFrame(drawLoop);
-        };
-        connObj.animationFrameId = requestAnimationFrame(drawLoop);
-
-        const canvasStream = canvas.captureStream(30);
 
         const pc = new RTCPeerConnection({
           iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -1519,21 +1707,174 @@ if (!is_mobile) {
         connObj.pc = pc;
         desktopPeerConnections.set(socketId, pc);
 
-        canvasStream
-          .getTracks()
-          .forEach((track) => pc.addTrack(track, canvasStream));
+        // WebRTC Data Channel setup for mouseInput
+        const inputChannel = pc.createDataChannel("mouseInput", {
+          ordered: false,
+          maxRetransmits: 0,
+        });
 
-        pc.onicecandidate = (event) => {
-          if (event.candidate) {
-            window.api.sendWebRtcSignalToMobile(socketId, {
-              candidate: event.candidate,
-            });
+        inputChannel.onmessage = (msgEvent) => {
+          try {
+            const data = JSON.parse(msgEvent.data);
+            if (data.type === "move") {
+              window.api.injectMouseMove(data.coords);
+            } else if (data.type === "click") {
+              window.api.injectMouseClick(data.coords);
+            }
+          } catch (e) {
+            console.error("Failed to parse data channel message:", e);
           }
         };
 
+        // WebCodecs crop and generator pipeline
+        const videoTrack = localScreenStream.getVideoTracks()[0];
+        const trackProcessor = new MediaStreamTrackProcessor({
+          track: videoTrack,
+        });
+        const trackGenerator = new MediaStreamTrackGenerator({ kind: "video" });
+
+        const reader = trackProcessor.readable.getReader();
+        const writer = trackGenerator.writable.getWriter();
+
+        const outputStream = new MediaStream([trackGenerator]);
+        outputStream
+          .getTracks()
+          .forEach((track) => pc.addTrack(track, outputStream));
+
+        let frameLoopActive = true;
+        connObj.stopFrameLoop = () => {
+          frameLoopActive = false;
+        };
+
+        let frameCount = 0;
+        let lastFrameTime = 0;
+        async function processFrames() {
+          try {
+            while (frameLoopActive) {
+              const { value: frame, done } = await reader.read();
+              if (done || !frameLoopActive) {
+                if (frame) frame.close();
+                break;
+              }
+              if (!desktopConnections.has(socketId)) {
+                frame.close();
+                break;
+              }
+              const now = Date.now();
+              if (now - lastFrameTime < 30) {
+                frame.close();
+                continue;
+              }
+              lastFrameTime = now;
+              if (frameCount === 0) {
+                console.log(
+                  "Desktop WebRTC: Successfully received first frame from track processor!",
+                );
+              }
+              frameCount++;
+
+              const crop = connObj.crop || { x: 0, y: 0, w: 1, h: 1 };
+              let cropX = Math.round(crop.x * frame.codedWidth);
+              let cropY = Math.round(crop.y * frame.codedHeight);
+              let cropW = Math.round(crop.w * frame.codedWidth);
+              let cropH = Math.round(crop.h * frame.codedHeight);
+
+              // Force even dimensions to comply with YUV 4:2:0 subsampling alignment
+              cropX = Math.floor(cropX / 2) * 2;
+              cropY = Math.floor(cropY / 2) * 2;
+              cropW = Math.floor(cropW / 2) * 2;
+              cropH = Math.floor(cropH / 2) * 2;
+
+              cropX = Math.max(0, Math.min(frame.codedWidth - 2, cropX));
+              cropY = Math.max(0, Math.min(frame.codedHeight - 2, cropY));
+              cropW = Math.max(2, Math.min(frame.codedWidth - cropX, cropW));
+              cropH = Math.max(2, Math.min(frame.codedHeight - cropY, cropH));
+
+              const options = {
+                visibleRect: {
+                  x: cropX,
+                  y: cropY,
+                  width: cropW,
+                  height: cropH,
+                },
+              };
+
+              const targetW = 1920;
+              const ratio = targetW / cropW;
+              options.displayWidth = targetW;
+              let targetH = Math.max(2, Math.round(cropH * ratio));
+              if (targetH % 2 !== 0) {
+                targetH--;
+              }
+              options.displayHeight = targetH;
+
+              const croppedFrame = new VideoFrame(frame, options);
+              await writer.write(croppedFrame);
+              frame.close();
+            }
+          } catch (err) {
+            console.error("Frame processing loop error:", err);
+          } finally {
+            try {
+              reader.releaseLock();
+              writer.releaseLock();
+            } catch (e) {}
+          }
+        }
+
+        processFrames();
+
+        pc.onicecandidate = (event) => {
+          if (event.candidate) {
+            console.log(
+              "Desktop WebRTC: Generated ICE candidate:",
+              event.candidate.candidate,
+            );
+            window.api.sendWebRtcSignalToMobile(socketId, {
+              candidate: {
+                candidate: event.candidate.candidate,
+                sdpMid: event.candidate.sdpMid,
+                sdpMLineIndex: event.candidate.sdpMLineIndex,
+                usernameFragment: event.candidate.usernameFragment,
+              },
+            });
+          } else {
+            console.log("Desktop WebRTC: ICE candidate gathering complete.");
+          }
+        };
+
+        pc.oniceconnectionstatechange = () => {
+          console.log(
+            "Desktop WebRTC: ICE Connection state changed to:",
+            pc.iceConnectionState,
+          );
+        };
+        pc.onconnectionstatechange = () => {
+          console.log(
+            "Desktop WebRTC: Peer Connection state changed to:",
+            pc.connectionState,
+          );
+        };
+        pc.onicecandidateerror = (event) => {
+          console.error(
+            "Desktop WebRTC: ICE Candidate error:",
+            event.errorCode,
+            event.errorText,
+          );
+        };
+
         const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        window.api.sendWebRtcSignalToMobile(socketId, { sdp: offer });
+        const mungedOffer = new RTCSessionDescription({
+          type: offer.type,
+          sdp: mungeSdpToForceH264(offer.sdp),
+        });
+        await pc.setLocalDescription(mungedOffer);
+        window.api.sendWebRtcSignalToMobile(socketId, {
+          sdp: {
+            type: mungedOffer.type,
+            sdp: mungedOffer.sdp,
+          },
+        });
       } catch (err) {
         console.error("Desktop WebRTC setup failed:", err);
       }
@@ -1546,7 +1887,7 @@ if (!is_mobile) {
       const conn = desktopConnections.get(socketId);
       if (conn) {
         if (conn.pc) conn.pc.close();
-        if (conn.animationFrameId) cancelAnimationFrame(conn.animationFrameId);
+        if (conn.stopFrameLoop) conn.stopFrameLoop();
         desktopConnections.delete(socketId);
       }
       const pc = desktopPeerConnections.get(socketId);
@@ -1557,9 +1898,6 @@ if (!is_mobile) {
       if (desktopPeerConnections.size === 0 && localScreenStream) {
         localScreenStream.getTracks().forEach((track) => track.stop());
         localScreenStream = null;
-        if (window.desktopVideoElement) {
-          window.desktopVideoElement.srcObject = null;
-        }
       }
     });
   }
@@ -1582,11 +1920,18 @@ if (!is_mobile) {
       if (!pc) return;
 
       if (signal.sdp) {
-        pc.setRemoteDescription(new RTCSessionDescription(signal.sdp)).catch(
-          (err) =>
-            console.error("Desktop: failed to set remote description:", err),
+        const mungedSdp = new RTCSessionDescription({
+          type: signal.sdp.type,
+          sdp: mungeSdpToForceH264(signal.sdp.sdp),
+        });
+        pc.setRemoteDescription(mungedSdp).catch((err) =>
+          console.error("Desktop: failed to set remote description:", err),
         );
       } else if (signal.candidate) {
+        console.log(
+          "Desktop WebRTC: adding remote ICE candidate:",
+          signal.candidate.candidate,
+        );
         pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch((err) =>
           console.error("Desktop: failed to add ICE candidate:", err),
         );
@@ -1597,7 +1942,7 @@ if (!is_mobile) {
   // Mobile (Receiver) WebRTC implementation
   if (window.api.onWebRtcSignal) {
     window.api.onWebRtcSignal(async ({ signal }) => {
-      console.log("Mobile WebRTC: received signal:", signal);
+      logMobileEvent("log", "Mobile WebRTC: received signal:", signal);
       try {
         if (signal.sdp && signal.sdp.type === "offer") {
           if (mobilePeerConnection) {
@@ -1608,14 +1953,60 @@ if (!is_mobile) {
             iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
           });
 
-          mobilePeerConnection.onicecandidate = (event) => {
-            if (event.candidate && window.api.sendWebRtcSignal) {
-              window.api.sendWebRtcSignal({ candidate: event.candidate });
+          // Set up Mobile input data channel handler
+          mobilePeerConnection.ondatachannel = (event) => {
+            const channel = event.channel;
+            if (channel.label === "mouseInput") {
+              mobileInputChannel = channel;
+              logMobileEvent("log", "Mobile WebRTC: Input channel connected");
             }
           };
 
+          mobilePeerConnection.onicecandidate = (event) => {
+            if (event.candidate) {
+              logMobileEvent(
+                "log",
+                "Mobile WebRTC: Generated ICE candidate:",
+                event.candidate.candidate,
+              );
+              if (window.api.sendWebRtcSignal) {
+                window.api.sendWebRtcSignal({
+                  candidate: {
+                    candidate: event.candidate.candidate,
+                    sdpMid: event.candidate.sdpMid,
+                    sdpMLineIndex: event.candidate.sdpMLineIndex,
+                    usernameFragment: event.candidate.usernameFragment,
+                  },
+                });
+              }
+            } else {
+              logMobileEvent(
+                "log",
+                "Mobile WebRTC: ICE candidate gathering complete.",
+              );
+            }
+          };
+
+          mobilePeerConnection.onicecandidateerror = (event) => {
+            logMobileEvent(
+              "error",
+              "Mobile WebRTC: ICE Candidate error:",
+              event.errorCode,
+              event.errorText,
+            );
+          };
+
+          mobilePeerConnection.onconnectionstatechange = () => {
+            logMobileEvent(
+              "log",
+              "Mobile WebRTC: Peer Connection state changed to:",
+              mobilePeerConnection.connectionState,
+            );
+          };
+
           mobilePeerConnection.oniceconnectionstatechange = () => {
-            console.log(
+            logMobileEvent(
+              "log",
               "Mobile WebRTC: Connection state changed to:",
               mobilePeerConnection.iceConnectionState,
             );
@@ -1627,40 +2018,67 @@ if (!is_mobile) {
                 clearTimeout(webrtcTimeout);
                 webrtcTimeout = null;
               }
-              const img = document.getElementById("screen-stream-img");
               const video = document.getElementById("screen-stream-video");
-              if (img) img.style.display = "none";
               if (video) video.style.display = "block";
             }
           };
 
           mobilePeerConnection.ontrack = (event) => {
-            console.log("Mobile WebRTC: received track");
+            logMobileEvent("log", "Mobile WebRTC: received track");
+            const receiver = event.receiver;
+            if (receiver && "playoutDelayHint" in receiver) {
+              receiver.playoutDelayHint = 1.0;
+            }
             const videoElem = document.getElementById("screen-stream-video");
             if (videoElem) {
               videoElem.srcObject = event.streams[0];
               videoElem
                 .play()
-                .catch((err) => console.error("Mobile play failed:", err));
+                .catch((err) =>
+                  logMobileEvent("error", "Mobile play failed:", err),
+                );
             }
           };
 
-          await mobilePeerConnection.setRemoteDescription(
-            new RTCSessionDescription(signal.sdp),
-          );
+          // Apply remote offer (SDP munged to force H.264)
+          const mungedOffer = new RTCSessionDescription({
+            type: signal.sdp.type,
+            sdp: mungeSdpToForceH264(signal.sdp.sdp),
+          });
+          await mobilePeerConnection.setRemoteDescription(mungedOffer);
           const answer = await mobilePeerConnection.createAnswer();
-          await mobilePeerConnection.setLocalDescription(answer);
+          const mungedAnswer = new RTCSessionDescription({
+            type: answer.type,
+            sdp: mungeSdpToForceH264(answer.sdp),
+          });
+          await mobilePeerConnection.setLocalDescription(mungedAnswer);
 
           if (window.api.sendWebRtcSignal) {
-            window.api.sendWebRtcSignal({ sdp: answer });
+            window.api.sendWebRtcSignal({
+              sdp: {
+                type: mungedAnswer.type,
+                sdp: mungedAnswer.sdp,
+              },
+            });
           }
         } else if (signal.candidate && mobilePeerConnection) {
-          await mobilePeerConnection.addIceCandidate(
-            new RTCIceCandidate(signal.candidate),
+          logMobileEvent(
+            "log",
+            "Mobile WebRTC: adding remote ICE candidate:",
+            signal.candidate.candidate,
           );
+          await mobilePeerConnection
+            .addIceCandidate(new RTCIceCandidate(signal.candidate))
+            .catch((err) =>
+              logMobileEvent(
+                "error",
+                "Mobile: failed to add ICE candidate:",
+                err,
+              ),
+            );
         }
       } catch (err) {
-        console.error("Mobile WebRTC processing failed:", err);
+        logMobileEvent("error", "Mobile WebRTC processing failed:", err);
       }
     });
   }
@@ -2211,7 +2629,7 @@ function closeEditor() {
   active_editor_file_path = null;
 
   const activeInput = document.getElementById("active-input");
-  if (activeInput) {
+  if (activeInput && !is_mobile) {
     activeInput.focus();
   }
 
@@ -2874,7 +3292,7 @@ window.api.onPinnedDirsUpdated((info) => {
 });
 
 // Setup event listeners on the video element to remove "waiting" class when the WebRTC stream actually starts playing
-(function() {
+(function () {
   const videoElem = document.getElementById("screen-stream-video");
   const containerElem = document.getElementById("screen-stream-container");
   if (videoElem) {

@@ -63,4 +63,6 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.send("stream-crop-updated", socketId, region),
   onUpdateCropRegion: (callback) =>
     ipcRenderer.on("update-crop-region", (event, info) => callback(info)),
+  injectMouseMove: (coords) => ipcRenderer.send("inject-mouse-move", coords),
+  injectMouseClick: (coords) => ipcRenderer.send("inject-mouse-click", coords),
 });

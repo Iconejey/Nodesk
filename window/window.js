@@ -727,6 +727,11 @@ function submitInput(text, usePro = false) {
           streamStartTime = null;
           offsetVotes = new Map();
           mediaOffsetVotes = new Map();
+          isWaitingForNewFrame = false;
+          if (pendingResumeTimeout) {
+            clearTimeout(pendingResumeTimeout);
+            pendingResumeTimeout = null;
+          }
 
           const videoElem = document.getElementById("screen-stream-video");
           if (videoElem) {
@@ -771,6 +776,11 @@ function submitInput(text, usePro = false) {
           streamStartTime = null;
           offsetVotes = new Map();
           mediaOffsetVotes = new Map();
+          isWaitingForNewFrame = false;
+          if (pendingResumeTimeout) {
+            clearTimeout(pendingResumeTimeout);
+            pendingResumeTimeout = null;
+          }
           updateScreenTransform();
 
           const video = document.getElementById("screen-stream-video");
@@ -1189,6 +1199,12 @@ window.addEventListener("DOMContentLoaded", () => {
           startDistance = Math.sqrt(dx * dx + dy * dy);
         }
 
+        if (pendingResumeTimeout) {
+          clearTimeout(pendingResumeTimeout);
+          pendingResumeTimeout = null;
+        }
+        isWaitingForNewFrame = false;
+
         if (isDragging || isPinching) {
           if (mobileInputChannel && mobileInputChannel.readyState === "open") {
             mobileInputChannel.send(JSON.stringify({ type: "pause" }));
@@ -1295,16 +1311,24 @@ window.addEventListener("DOMContentLoaded", () => {
       }
 
       if (wasInteracting && !isDragging && !isPinching) {
-        // The gesture has ended! Sync final transform, resume stream, and show video
+        // The gesture has ended! Sync final transform, resume stream, and wait for the new frame
         updateScreenTransform(true);
 
         if (mobileInputChannel && mobileInputChannel.readyState === "open") {
           mobileInputChannel.send(JSON.stringify({ type: "resume" }));
         }
-        const videoElem = document.getElementById("screen-stream-video");
-        if (videoElem) {
-          videoElem.style.opacity = "1";
-        }
+
+        isWaitingForNewFrame = true;
+        if (pendingResumeTimeout) clearTimeout(pendingResumeTimeout);
+        pendingResumeTimeout = setTimeout(() => {
+          if (isWaitingForNewFrame) {
+            isWaitingForNewFrame = false;
+            const videoElem = document.getElementById("screen-stream-video");
+            if (videoElem) {
+              videoElem.style.opacity = "1";
+            }
+          }
+        }, 2000);
       }
     });
   }
@@ -1437,6 +1461,8 @@ let rtpTimestampOffset = null;
 let streamStartTime = null;
 let offsetVotes = new Map();
 let mediaOffsetVotes = new Map();
+let isWaitingForNewFrame = false;
+let pendingResumeTimeout = null;
 
 function pushStateHistory(crop, cursor) {
   const now = Date.now();
@@ -1804,6 +1830,23 @@ function renderCssTransform() {
   activeElem.style.width = `${frameCrop.w * 100}%`;
   activeElem.style.height = `${frameCrop.h * 100}%`;
 
+  if (isWaitingForNewFrame) {
+    const dx = Math.abs(frameCrop.x - currentTargetCrop.x);
+    const dy = Math.abs(frameCrop.y - currentTargetCrop.y);
+    const dw = Math.abs(frameCrop.w - currentTargetCrop.w);
+    const dh = Math.abs(frameCrop.h - currentTargetCrop.h);
+    if (dx < 0.01 && dy < 0.01 && dw < 0.01 && dh < 0.01) {
+      isWaitingForNewFrame = false;
+      if (pendingResumeTimeout) {
+        clearTimeout(pendingResumeTimeout);
+        pendingResumeTimeout = null;
+      }
+      activeElem.style.opacity = "1";
+    }
+  }
+
+
+
   // Log synchronization details occasionally to assist in debugging
   if (lastFrameMetadata && lastFrameMetadata.presentedFrames % 100 === 0) {
     console.log(
@@ -1820,6 +1863,7 @@ function renderCssTransform() {
       cursorElem.style.display = "block";
       cursorElem.style.left = `${normX * 100}%`;
       cursorElem.style.top = `${normY * 100}%`;
+      cursorElem.style.transform = `scale(${1 / s})`;
     }
   }
 }
@@ -1980,6 +2024,7 @@ if (!is_mobile) {
               window.api.injectMouseClick(data.coords);
             } else if (data.type === "pause") {
               connObj.paused = true;
+              sendBgScreenshot();
             } else if (data.type === "resume") {
               connObj.paused = false;
             }
@@ -2130,7 +2175,6 @@ if (!is_mobile) {
         }
 
         setTimeout(sendBgScreenshot, 1000);
-        connObj.bgInterval = setInterval(sendBgScreenshot, 5000);
 
         pc.onicecandidate = (event) => {
           if (event.candidate) {

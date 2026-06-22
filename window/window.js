@@ -725,6 +725,8 @@ function submitInput(text, usePro = false) {
           mediaTimeOffset = null;
           rtpTimestampOffset = null;
           streamStartTime = null;
+          offsetVotes = new Map();
+          mediaOffsetVotes = new Map();
 
           const videoElem = document.getElementById("screen-stream-video");
           if (videoElem) {
@@ -767,6 +769,8 @@ function submitInput(text, usePro = false) {
           mediaTimeOffset = null;
           rtpTimestampOffset = null;
           streamStartTime = null;
+          offsetVotes = new Map();
+          mediaOffsetVotes = new Map();
           updateScreenTransform();
 
           const video = document.getElementById("screen-stream-video");
@@ -1184,6 +1188,16 @@ window.addEventListener("DOMContentLoaded", () => {
           const dy = e.touches[0].clientY - e.touches[1].clientY;
           startDistance = Math.sqrt(dx * dx + dy * dy);
         }
+
+        if (isDragging || isPinching) {
+          if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+            mobileInputChannel.send(JSON.stringify({ type: "pause" }));
+          }
+          const videoElem = document.getElementById("screen-stream-video");
+          if (videoElem) {
+            videoElem.style.opacity = "0";
+          }
+        }
       },
       { passive: false },
     );
@@ -1227,7 +1241,7 @@ window.addEventListener("DOMContentLoaded", () => {
               window.api.sendMouseMove({ x: normX, y: normY });
             }
           }
-          updateScreenTransform();
+          updateScreenTransform(false);
         } else if (isPinching && e.touches.length === 2) {
           e.preventDefault(); // Prevent default mobile page zoom
           const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1236,7 +1250,7 @@ window.addEventListener("DOMContentLoaded", () => {
           if (startDistance > 0) {
             zoomScale = startScale * (distance / startDistance);
             zoomScale = Math.max(1.0, Math.min(5.0, zoomScale));
-            updateScreenTransform();
+            updateScreenTransform(false);
           }
         }
       },
@@ -1246,6 +1260,8 @@ window.addEventListener("DOMContentLoaded", () => {
     container.addEventListener("touchend", (e) => {
       e.preventDefault();
       lastTouchTime = Date.now();
+      const wasInteracting = isDragging || isPinching;
+
       if (isDragging) {
         isDragging = false;
         const now = Date.now();
@@ -1276,6 +1292,19 @@ window.addEventListener("DOMContentLoaded", () => {
         lastTapTime = now;
       } else if (isPinching && e.touches.length < 2) {
         isPinching = false;
+      }
+
+      if (wasInteracting && !isDragging && !isPinching) {
+        // The gesture has ended! Sync final transform, resume stream, and show video
+        updateScreenTransform(true);
+
+        if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+          mobileInputChannel.send(JSON.stringify({ type: "resume" }));
+        }
+        const videoElem = document.getElementById("screen-stream-video");
+        if (videoElem) {
+          videoElem.style.opacity = "1";
+        }
       }
     });
   }
@@ -1406,6 +1435,8 @@ let lastFrameMetadata = null;
 let mediaTimeOffset = null;
 let rtpTimestampOffset = null;
 let streamStartTime = null;
+let offsetVotes = new Map();
+let mediaOffsetVotes = new Map();
 
 function pushStateHistory(crop, cursor) {
   const now = Date.now();
@@ -1479,7 +1510,26 @@ function getFrameCropFromRtpTimestamp(rtpTimestamp, mediaTime) {
   }
 
   if (rtpTimestampOffset === null) {
-    // Estimate initial RTP offset using the crop that arrived around the playout delay window.
+    const now = Date.now();
+    const minArrival = now - 1500;
+    const maxArrival = now - 100;
+
+    for (let i = 0; i < receivedFrameCrops.length; i++) {
+      const entry = receivedFrameCrops[i];
+      if (entry.receiveTime >= minArrival && entry.receiveTime <= maxArrival) {
+        const diff = rtpTimestamp - Math.round(entry.timestamp * 0.09);
+        offsetVotes.set(diff, (offsetVotes.get(diff) || 0) + 1);
+        if (offsetVotes.get(diff) >= 5) {
+          rtpTimestampOffset = diff;
+          console.log(`Sync: Locked precise RTP offset to ${rtpTimestampOffset}`);
+          break;
+        }
+      }
+    }
+  }
+
+  let activeOffset = rtpTimestampOffset;
+  if (activeOffset === null) {
     const elapsed = streamStartTime ? (Date.now() - streamStartTime) : 1000;
     const targetArrival = Date.now() - Math.min(elapsed, 1000);
     let closestEntry = receivedFrameCrops[0];
@@ -1492,11 +1542,10 @@ function getFrameCropFromRtpTimestamp(rtpTimestamp, mediaTime) {
         closestEntry = receivedFrameCrops[i];
       }
     }
-
-    rtpTimestampOffset = rtpTimestamp - Math.round(closestEntry.timestamp * 0.09);
+    activeOffset = rtpTimestamp - Math.round(closestEntry.timestamp * 0.09);
   }
 
-  const targetSenderTimestamp = Math.round((rtpTimestamp - rtpTimestampOffset) / 0.09);
+  const targetSenderTimestamp = Math.round((rtpTimestamp - activeOffset) / 0.09);
 
   let bestEntry = receivedFrameCrops[0];
   let minDiff = Math.abs(
@@ -1522,7 +1571,26 @@ function getFrameCropFromMediaTime(mediaTime) {
   }
 
   if (mediaTimeOffset === null) {
-    // Estimate media timeline offset using local arrival timestamps.
+    const now = Date.now();
+    const minArrival = now - 1500;
+    const maxArrival = now - 100;
+
+    for (let i = 0; i < receivedFrameCrops.length; i++) {
+      const entry = receivedFrameCrops[i];
+      if (entry.receiveTime >= minArrival && entry.receiveTime <= maxArrival) {
+        const diff = Math.round((entry.timestamp / 1000000 - mediaTime) * 1000) / 1000;
+        mediaOffsetVotes.set(diff, (mediaOffsetVotes.get(diff) || 0) + 1);
+        if (mediaOffsetVotes.get(diff) >= 5) {
+          mediaTimeOffset = diff;
+          console.log(`Sync: Locked precise MediaTime offset to ${mediaTimeOffset}`);
+          break;
+        }
+      }
+    }
+  }
+
+  let activeOffset = mediaTimeOffset;
+  if (activeOffset === null) {
     const elapsed = streamStartTime ? (Date.now() - streamStartTime) : 1000;
     const targetArrival = Date.now() - Math.min(elapsed, 1000);
     let closestEntry = receivedFrameCrops[0];
@@ -1535,11 +1603,10 @@ function getFrameCropFromMediaTime(mediaTime) {
         closestEntry = receivedFrameCrops[i];
       }
     }
-
-    mediaTimeOffset = closestEntry.timestamp / 1000000 - mediaTime;
+    activeOffset = closestEntry.timestamp / 1000000 - mediaTime;
   }
 
-  const targetSenderTimestamp = (mediaTime + mediaTimeOffset) * 1000000;
+  const targetSenderTimestamp = (mediaTime + activeOffset) * 1000000;
 
   let bestEntry = receivedFrameCrops[0];
   let minDiff = Math.abs(
@@ -1890,6 +1957,7 @@ if (!is_mobile) {
           stopFrameLoop: null,
           bgInterval: null,
           inputChannel: null,
+          paused: false,
         };
         desktopConnections.set(socketId, connObj);
 
@@ -1900,10 +1968,7 @@ if (!is_mobile) {
         desktopPeerConnections.set(socketId, pc);
 
         // WebRTC Data Channel setup for mouseInput
-        const inputChannel = pc.createDataChannel("mouseInput", {
-          ordered: false,
-          maxRetransmits: 0,
-        });
+        const inputChannel = pc.createDataChannel("mouseInput");
         connObj.inputChannel = inputChannel;
 
         inputChannel.onmessage = (msgEvent) => {
@@ -1913,6 +1978,10 @@ if (!is_mobile) {
               window.api.injectMouseMove(data.coords);
             } else if (data.type === "click") {
               window.api.injectMouseClick(data.coords);
+            } else if (data.type === "pause") {
+              connObj.paused = true;
+            } else if (data.type === "resume") {
+              connObj.paused = false;
             }
           } catch (e) {
             console.error("Failed to parse data channel message:", e);
@@ -1952,6 +2021,11 @@ if (!is_mobile) {
               if (!desktopConnections.has(socketId)) {
                 frame.close();
                 break;
+              }
+              if (connObj.paused) {
+                frame.close();
+                await new Promise((resolve) => setTimeout(resolve, 50));
+                continue;
               }
               const now = Date.now();
               if (now - lastFrameTime < 30) {
@@ -2041,13 +2115,13 @@ if (!is_mobile) {
             const canvas = window.desktopBgCanvas;
             const video = window.desktopVideoElement;
             if (video.videoWidth > 0 && video.videoHeight > 0) {
-              canvas.width = 480;
+              canvas.width = 1920;
               canvas.height = Math.round(
-                480 * (video.videoHeight / video.videoWidth),
+                1920 * (video.videoHeight / video.videoWidth),
               );
               const ctx = canvas.getContext("2d");
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-              const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.4);
+              const jpegDataUrl = canvas.toDataURL("image/jpeg", 0.85);
               if (window.api.sendScreenBg) {
                 window.api.sendScreenBg(socketId, jpegDataUrl);
               }

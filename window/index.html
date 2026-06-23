@@ -178,6 +178,12 @@
 						sendMouseClick: coords => {
 							if (currentSocket) currentSocket.emit('mouse-click', coords);
 						},
+						sendMouseRightClick: coords => {
+							if (currentSocket) currentSocket.emit('mouse-right-click', coords);
+						},
+						sendMouseScroll: delta => {
+							if (currentSocket) currentSocket.emit('mouse-scroll', delta);
+						},
 						sendCropRegion: region => {
 							if (currentSocket) currentSocket.emit('update-crop-region', { region });
 						},

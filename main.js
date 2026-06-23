@@ -107,6 +107,61 @@ function performMouseClick() {
   });
 }
 
+function performMouseRightClick() {
+  exec("ydotool click 0xC1", (ydotoolErr) => {
+    if (!ydotoolErr) return;
+    exec("wlrctl pointer click right", (wlrctlErr) => {
+      if (!wlrctlErr) return;
+      exec("echo 'click right' | dotool", (dotoolErr) => {
+        if (!dotoolErr) return;
+        exec("xdotool click 3", (xdotoolErr) => {
+          if (!xdotoolErr) return;
+          console.error("Failed to simulate mouse right click: ydotool, wlrctl, dotool, and xdotool all failed.");
+        });
+      });
+    });
+  });
+}
+
+function performMouseScroll(dx, dy) {
+  const ydotoolCmd = `ydotool mousemove -w -- ${Math.round(dx)} ${Math.round(dy)}`;
+  const wlrctlCmd = `wlrctl pointer scroll ${Math.round(-dy)} ${Math.round(dx)}`;
+  
+  let dotoolCmds = [];
+  if (dy > 0) dotoolCmds.push("wheel up");
+  if (dy < 0) dotoolCmds.push("wheel down");
+  if (dx > 0) dotoolCmds.push("wheel right");
+  if (dx < 0) dotoolCmds.push("wheel left");
+  const dotoolCmd = dotoolCmds.length > 0 ? `echo '${dotoolCmds.join("\n")}' | dotool` : "true";
+
+  let xdotoolCmds = [];
+  const stepsY = Math.abs(Math.round(dy));
+  const clickY = dy > 0 ? 4 : 5;
+  for (let i = 0; i < stepsY; i++) {
+    xdotoolCmds.push(`xdotool click ${clickY}`);
+  }
+  const stepsX = Math.abs(Math.round(dx));
+  const clickX = dx < 0 ? 6 : 7;
+  for (let i = 0; i < stepsX; i++) {
+    xdotoolCmds.push(`xdotool click ${clickX}`);
+  }
+  const xdotoolCmd = xdotoolCmds.length > 0 ? xdotoolCmds.join(" && ") : "true";
+
+  exec(ydotoolCmd, (ydotoolErr) => {
+    if (!ydotoolErr) return;
+    exec(wlrctlCmd, (wlrctlErr) => {
+      if (!wlrctlErr) return;
+      exec(dotoolCmd, (dotoolErr) => {
+        if (!dotoolErr) return;
+        exec(xdotoolCmd, (xdotoolErr) => {
+          if (!xdotoolErr) return;
+          console.error("Failed to simulate mouse scroll using ydotool, wlrctl, dotool, or xdotool.");
+        });
+      });
+    });
+  });
+}
+
 function getLocalIpAddress() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
@@ -576,6 +631,19 @@ function startMobileServer() {
       const absY = Math.round(y * size.height);
       sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
       performMouseClick();
+    });
+
+    socket.on("mouse-right-click", ({ x, y }) => {
+      const size = getPrimaryDisplaySize();
+      if (!size) return;
+      const absX = Math.round(x * size.width);
+      const absY = Math.round(y * size.height);
+      sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
+      performMouseRightClick();
+    });
+
+    socket.on("mouse-scroll", (delta) => {
+      performMouseScroll(delta.x, delta.y);
     });
 
     socket.on("webrtc-signal", ({ signal }) => {
@@ -1981,6 +2049,19 @@ ipcMain.on("inject-mouse-click", (event, { x, y }) => {
   const absY = Math.round(y * size.height);
   sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
   performMouseClick();
+});
+
+ipcMain.on("inject-mouse-right-click", (event, { x, y }) => {
+  const size = getPrimaryDisplaySize();
+  if (!size) return;
+  const absX = Math.round(x * size.width);
+  const absY = Math.round(y * size.height);
+  sendHyprlandCommand(`/dispatch movecursor ${absX} ${absY}`);
+  performMouseRightClick();
+});
+
+ipcMain.on("inject-mouse-scroll", (event, delta) => {
+  performMouseScroll(delta.x, delta.y);
 });
 
 ipcMain.handle("read-dir", async (event, dir_path) => {

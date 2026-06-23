@@ -1449,6 +1449,15 @@ window.addEventListener("DOMContentLoaded", () => {
           const dx = e.touches[0].clientX - e.touches[1].clientX;
           const dy = e.touches[0].clientY - e.touches[1].clientY;
           startDistance = Math.sqrt(dx * dx + dy * dy);
+          
+          startMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          startMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          lastMidX = startMidX;
+          lastMidY = startMidY;
+          accumulatedScrollX = 0;
+          accumulatedScrollY = 0;
+          twoFingerTapCandidate = true;
+          twoFingerMoveDistance = 0;
         }
 
         if (pendingResumeTimeout) {
@@ -1512,13 +1521,49 @@ window.addEventListener("DOMContentLoaded", () => {
           updateScreenTransform(false);
         } else if (isPinching && e.touches.length === 2) {
           e.preventDefault(); // Prevent default mobile page zoom
+          
+          const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          const deltaX = midX - lastMidX;
+          const deltaY = midY - lastMidY;
+          
+          lastMidX = midX;
+          lastMidY = midY;
+          
           const dx = e.touches[0].clientX - e.touches[1].clientX;
           const dy = e.touches[0].clientY - e.touches[1].clientY;
           const distance = Math.sqrt(dx * dx + dy * dy);
-          if (startDistance > 0) {
-            zoomScale = startScale * (distance / startDistance);
-            zoomScale = Math.max(1.0, Math.min(5.0, zoomScale));
-            updateScreenTransform(false);
+          const distChange = Math.abs(distance - startDistance);
+          
+          const moveDist = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+          twoFingerMoveDistance += moveDist;
+          
+          if (twoFingerMoveDistance > 10 || distChange > 15) {
+            twoFingerTapCandidate = false;
+          }
+          
+          // Decide scroll vs pinch zoom
+          if (distChange > twoFingerMoveDistance && distChange > 15) {
+            if (startDistance > 0) {
+              zoomScale = startScale * (distance / startDistance);
+              zoomScale = Math.max(1.0, Math.min(5.0, zoomScale));
+              updateScreenTransform(false);
+            }
+          } else if (twoFingerMoveDistance > distChange && moveDist > 1) {
+            accumulatedScrollX += deltaX;
+            accumulatedScrollY += deltaY;
+            
+            const scrollThreshold = 15;
+            if (Math.abs(accumulatedScrollY) >= scrollThreshold) {
+              const stepsY = Math.trunc(accumulatedScrollY / scrollThreshold);
+              accumulatedScrollY = accumulatedScrollY % scrollThreshold;
+              sendScrollEvent(0, stepsY);
+            }
+            if (Math.abs(accumulatedScrollX) >= scrollThreshold) {
+              const stepsX = Math.trunc(accumulatedScrollX / scrollThreshold);
+              accumulatedScrollX = accumulatedScrollX % scrollThreshold;
+              sendScrollEvent(stepsX, 0);
+            }
           }
         }
       },
@@ -1558,8 +1603,14 @@ window.addEventListener("DOMContentLoaded", () => {
           }
         }
         lastTapTime = now;
-      } else if (isPinching && e.touches.length < 2) {
-        isPinching = false;
+      } else if (isPinching) {
+        if (e.touches.length < 2) {
+          isPinching = false;
+        }
+        if (twoFingerTapCandidate) {
+          twoFingerTapCandidate = false;
+          sendRightClickEvent(normX, normY);
+        }
       }
 
       if (wasInteracting && !isDragging && !isPinching) {
@@ -1922,6 +1973,14 @@ let startDistance = 0;
 let startScale = 1.0;
 let isDragging = false;
 let isPinching = false;
+let startMidX = 0;
+let startMidY = 0;
+let lastMidX = 0;
+let lastMidY = 0;
+let accumulatedScrollX = 0;
+let accumulatedScrollY = 0;
+let twoFingerTapCandidate = false;
+let twoFingerMoveDistance = 0;
 let lastTapTime = 0;
 let lastTouchMoveTime = 0;
 let lastTouchTime = 0;
@@ -1951,6 +2010,26 @@ function sendCropRegionThrottled(crop) {
         interval - (now - lastCropSentTime),
       );
     }
+  }
+}
+
+function sendRightClickEvent(x, y) {
+  if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+    mobileInputChannel.send(
+      JSON.stringify({ type: "right-click", coords: { x, y } }),
+    );
+  } else if (window.api.sendMouseRightClick) {
+    window.api.sendMouseRightClick({ x, y });
+  }
+}
+
+function sendScrollEvent(dx, dy) {
+  if (mobileInputChannel && mobileInputChannel.readyState === "open") {
+    mobileInputChannel.send(
+      JSON.stringify({ type: "scroll", delta: { x: dx, y: dy } }),
+    );
+  } else if (window.api.sendMouseScroll) {
+    window.api.sendMouseScroll({ x: dx, y: dy });
   }
 }
 
@@ -2272,6 +2351,10 @@ if (!is_mobile) {
               window.api.injectMouseMove(data.coords);
             } else if (data.type === "click") {
               window.api.injectMouseClick(data.coords);
+            } else if (data.type === "right-click") {
+              window.api.injectMouseRightClick(data.coords);
+            } else if (data.type === "scroll") {
+              window.api.injectMouseScroll(data.delta);
             } else if (data.type === "pause") {
               connObj.paused = true;
               sendBgScreenshot();

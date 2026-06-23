@@ -17,13 +17,6 @@ Nono-Terminal is an Electron-based persistent terminal emulator integrated with 
 
 ### Screen sharing mode
 
-- Mouse mode with touch gestures on touch area to :
-    - Move the mouse with single finger drag.
-    - Click with single finger tap.
-    - Right click with two finger tap.
-    - Scroll with two finger drag (vertical and horizontal).
-    - Pinch to zoom in and out (zooming towards mouse cursor position, moving mouse will also move the zoomed in view).
-- Dragging up/down on screen to change aspect ratio of the screen view. Double tap on the screen to reset the aspect ratio to desktop default.
 - /type slash command to give a text input box to send text to the remote machine.
 - /key-shortcut slash command to show keyboard and modifier keys to make a shortcut key combination to send to the remote machine.
 

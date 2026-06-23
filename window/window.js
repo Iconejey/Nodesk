@@ -932,6 +932,7 @@ function submitInput(text, usePro = false) {
           window.getComputedStyle(container_elem).display !== "none";
         if (is_visible) {
           container_elem.style.display = "none";
+          document.body.classList.remove("screen-active");
           if (window.api.stopScreenStream) {
             window.api.stopScreenStream();
           }
@@ -990,12 +991,14 @@ function submitInput(text, usePro = false) {
 
           container_elem.style.display = "none";
           container_elem.classList.remove("waiting");
+          document.body.classList.remove("screen-active");
 
           appendTerminalSystemMessage("Screen stream stopped.");
           appendNewPromptBlock(current_cwd);
         } else {
           container_elem.style.display = "block";
           container_elem.classList.add("waiting");
+          document.body.classList.add("screen-active");
 
           // Reset crop and zoom variables
           currentStreamCrop = { x: 0, y: 0, w: 1, h: 1 };
@@ -1058,6 +1061,7 @@ function submitInput(text, usePro = false) {
                 true,
               );
               container_elem.style.display = "none";
+              document.body.classList.remove("screen-active");
               if (window.api.stopScreenStream) {
                 window.api.stopScreenStream();
               }
@@ -1255,13 +1259,13 @@ window.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // Focus the input when clicking the background
+  // Focus the input when clicking the terminal element
   document.addEventListener("click", (e) => {
     if (active_editor_file_path) return;
     if (window.getSelection().toString() !== "") return;
 
-    // Do not autofocus the input if clicking/interacting with the video stream container
-    if (e.target.closest("#screen-stream-container")) return;
+    // The terminal input should be focused ONLY when clicking on the terminal element
+    if (!e.target.closest("#terminal-chat-container")) return;
 
     if (
       e.target.closest(
@@ -1647,6 +1651,8 @@ window.api.onWindowInit((info) => {
     if (wrapper) {
       wrapper.style.aspectRatio = `${info.displaySize.width} / ${info.displaySize.height}`;
     }
+    document.documentElement.style.setProperty("--aspect-w", info.displaySize.width);
+    document.documentElement.style.setProperty("--aspect-h", info.displaySize.height);
   }
 });
 

@@ -558,6 +558,7 @@ function updateThinkingSummary(details, content) {
 }
 
 function updateAgentRunSummary(details) {
+	if (!details) return;
 	const statusSpan = details.querySelector('.status-text');
 	if (!statusSpan) return;
 	if (details.classList.contains('running')) {
@@ -618,8 +619,8 @@ function initAgentRunUI() {
 	active_thinking_content = null;
 	active_message_content = null;
 
-	active_agent_run_details.addEventListener('toggle', () => {
-		updateAgentRunSummary(active_agent_run_details);
+	active_agent_run_details.addEventListener('toggle', (e) => {
+		updateAgentRunSummary(e.currentTarget);
 	});
 
 	window.scrollTo(0, document.body.scrollHeight);

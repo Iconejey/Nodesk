@@ -1246,9 +1246,9 @@ body.diff-active terminal-chat {
 #screen-stream-container {
 	display: none;
 	position: fixed;
-	top: 1.25rem;
-	left: 1.25rem;
-	width: calc(100% - 2.5rem);
+	top: calc(1.25rem + env(safe-area-inset-top, 0px));
+	left: calc(1.25rem + env(safe-area-inset-left, 0px));
+	width: calc(100% - 2.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
 	text-align: center;
 	border: 2px solid var(--blue);
 	border-radius: 8px;
@@ -1265,7 +1265,7 @@ body.diff-active terminal-chat {
 }
 
 body.screen-active terminal-chat {
-	margin-top: calc(2.5rem + (100vw - 2.5rem) * var(--aspect-h) / var(--aspect-w));
+	margin-top: calc(2.5rem + env(safe-area-inset-top, 0px) + (100vw - 2.5rem - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) * var(--aspect-h) / var(--aspect-w));
 }
 
 #screen-stream-content-wrapper {

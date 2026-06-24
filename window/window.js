@@ -50,6 +50,7 @@ function renderConnectionOverlay(statusText, windowsList = []) {
 			window.api
 				.connectToHost(w.ip, w.port, w.id)
 				.then(() => {
+					saveKnownHost(w.ip, w.port);
 					document.body.classList.remove('conn-active');
 				})
 				.catch(err => {
@@ -82,6 +83,19 @@ function getTargetUrl(ip, port) {
 		return `${protocol}://${ip}${hasPort ? '' : ':' + port}`;
 	}
 	return `${protocol}://${ip}`;
+}
+
+function saveKnownHost(ip, port) {
+	try {
+		let known = JSON.parse(localStorage.getItem('nono_known_hosts')) || [];
+		if (!Array.isArray(known)) known = [];
+		known = known.filter(h => h.ip !== ip || h.port !== port);
+		known.unshift({ ip, port });
+		if (known.length > 10) known = known.slice(0, 10);
+		localStorage.setItem('nono_known_hosts', JSON.stringify(known));
+	} catch (e) {
+		console.error('Failed to save known host:', e);
+	}
 }
 
 async function startSubnetScan(ignoreKnown = false) {
@@ -422,6 +436,7 @@ function renderSuggestions(filtered) {
 				window.api
 					.connectToHost(cmd.ip, cmd.port, cmd.winId)
 					.then(() => {
+						saveKnownHost(cmd.ip, cmd.port);
 						appendTerminalSystemMessage('Connected successfully.');
 					})
 					.catch(err => {
@@ -680,6 +695,7 @@ function setupInputListeners(input_elem) {
 						window.api
 							.connectToHost(active_suggestion.ip, active_suggestion.port, active_suggestion.winId)
 							.then(() => {
+								saveKnownHost(active_suggestion.ip, active_suggestion.port);
 								appendTerminalSystemMessage('Connected successfully.');
 							})
 							.catch(err => {
@@ -762,6 +778,7 @@ function submitInput(text, usePro = false) {
 			window.api
 				.connectToHost(ip, '13737', winId)
 				.then(() => {
+					saveKnownHost(ip, '13737');
 					appendTerminalSystemMessage('Connected successfully.');
 				})
 				.catch(err => {

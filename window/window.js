@@ -565,7 +565,19 @@ function updateAgentRunSummary(details) {
 		return;
 	}
 	if (details.open) {
-		statusSpan.textContent = 'Agent Process';
+		const contentDiv = details.querySelector('.run-details-content');
+		let lastOutput = '';
+		if (contentDiv) {
+			const children = Array.from(contentDiv.children);
+			for (let i = children.length - 1; i >= 0; i--) {
+				const child = children[i];
+				if (child.classList.contains('input')) {
+					lastOutput = child.textContent.trim();
+					break;
+				}
+			}
+		}
+		statusSpan.textContent = lastOutput || 'Agent Process';
 	} else {
 		const contentDiv = details.querySelector('.run-details-content');
 		let stepsCount = 0;
@@ -628,6 +640,12 @@ function initAgentRunUI() {
 
 // Helper to count lines and create a collapse placeholder
 function addOutputPlaceholder(output_elem) {
+	if (!output_elem) return;
+	const text = output_elem.textContent.trim();
+	if (!text) {
+		output_elem.remove();
+		return;
+	}
 	const lines = output_elem.textContent.split('\n');
 	const line_count = lines.length;
 
@@ -3030,7 +3048,10 @@ window.api.onAgentStatus(status => {
 	console.log('Agent status:', status);
 	if (active_agent_run_details) {
 		if (active_agent_run_status) {
-			active_agent_run_status.textContent = status;
+			const current = active_agent_run_status.textContent;
+			if (current === 'Working...' || current === 'Thinking...' || (status !== 'Thinking...' && status !== 'Working...')) {
+				active_agent_run_status.textContent = status;
+			}
 		}
 		if (status === 'Timeout, retrying...') {
 			const pre_timeout = document.createElement('pre');
@@ -3053,7 +3074,10 @@ window.api.onAgentChunk(info => {
 	const parsed = parseThinkingAndContent(active_assistant_text);
 
 	if (active_agent_run_status) {
-		active_agent_run_status.textContent = 'Thinking...';
+		const current = active_agent_run_status.textContent;
+		if (current === 'Working...') {
+			active_agent_run_status.textContent = 'Thinking...';
+		}
 	}
 
 	if (!current_thinking_block) {
@@ -3087,21 +3111,19 @@ window.api.onAgentToolStart(info => {
 	else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
 	else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
 	else if (info.name === 'web_search') label = `Searching the web for "${info.args.query}"`;
-	else label = `Running ${info.name}...`;
-
-	if (active_agent_run_status) {
-		active_agent_run_status.textContent = label;
-	}
+	else label = `Running ${info.name}`;
 
 	if (info.name === 'execute_command') {
+		const commandText = info.args.command;
+
 		if (active_agent_run_status) {
-			active_agent_run_status.textContent = `Running: ${info.args.command}`;
+			active_agent_run_status.textContent = commandText;
 		}
 
 		const pre_input = document.createElement('pre');
 		pre_input.className = 'input chat-marker';
 		pre_input.dataset.toolCallId = info.tool_call_id;
-		pre_input.textContent = info.args.command;
+		pre_input.textContent = commandText;
 
 		const pre_output = document.createElement('pre');
 		pre_output.className = 'output';
@@ -3111,6 +3133,10 @@ window.api.onAgentToolStart(info => {
 
 		active_output_block = pre_output;
 	} else {
+		if (active_agent_run_status) {
+			active_agent_run_status.textContent = label + '...';
+		}
+
 		const pre_status = document.createElement('pre');
 		pre_status.className = 'input chat-marker';
 		pre_status.dataset.toolCallId = info.tool_call_id;
@@ -3701,7 +3727,10 @@ function simulateAgentResponse(fullText) {
 		const parsed = parseThinkingAndContent(active_assistant_text);
 
 		if (active_agent_run_status) {
-			active_agent_run_status.textContent = 'Thinking...';
+			const current = active_agent_run_status.textContent;
+			if (current === 'Working...') {
+				active_agent_run_status.textContent = 'Thinking...';
+			}
 		}
 
 		if (!current_thinking_block) {

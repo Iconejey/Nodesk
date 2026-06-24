@@ -49,6 +49,17 @@ body {
 	padding-right: env(safe-area-inset-right, 0px);
 }
 
+a {
+	color: var(--blue-soft);
+	text-decoration: none;
+	border-bottom: 1px dashed var(--blue-soft);
+
+	&:hover {
+		color: var(--blue-light);
+		border-bottom-style: solid;
+	}
+}
+
 terminal-chat {
 	display: flex;
 	flex-direction: column;
@@ -191,15 +202,7 @@ terminal-chat {
 				& tr:nth-child(even) {
 					background-color: color-mix(in srgb, var(--white) 3%, transparent);
 				}
-				& a {
-					color: var(--blue-soft);
-					text-decoration: none;
-					border-bottom: 1px dashed var(--blue-soft);
-				}
-				& a:hover {
-					color: var(--blue-light);
-					border-bottom-style: solid;
-				}
+
 				& code {
 					font-family: 'Consolas', monospace;
 				}
@@ -471,8 +474,13 @@ details.thinking-details {
 .waiting::before {
 	color: var(--gray) !important;
 	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.2em;
+	height: 1.2em;
+	top: 0.05em;
 	animation: spin 2s linear infinite;
-	transform-origin: center;
+	transform-origin: center center;
 }
 
 @keyframes spin {
@@ -1614,9 +1622,14 @@ details.agent-run-details {
 		content: '✦';
 		font-family: 'Consolas', monospace;
 		color: var(--gray) !important;
-		display: inline-block;
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 1.15em;
+		height: 1.15em;
+		vertical-align: -0.2em;
 		animation: spin 2s linear infinite;
-		transform-origin: center;
+		transform-origin: center center;
 		margin-right: 0.25rem;
 	}
 
@@ -1657,7 +1670,6 @@ details.agent-run-details {
 			left: 0;
 			top: 0.05em;
 			content: '•';
-			color: var(--purple);
 		}
 	}
 

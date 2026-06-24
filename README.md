@@ -6,7 +6,8 @@ Nono-Terminal is an Electron-based persistent terminal emulator integrated with 
 
 ## Todo list
 
-- /web {query} slash command to do a web search
+- /web {query} slash command to do a web search : `Add "/web {query}" slash command that uses AI search with query and outputs result.`
+- Handle "**Error:** Request was aborted." response.
 - Full git management using commit (messages, button), push, pull and commit history in the currently implemented changes/diff page, renaming it "git management" page.
 - /context slash command to view the current context window size and contents.
 - Autocompletion for file paths and directory names in the prompt.

@@ -326,7 +326,7 @@ const slash_commands = [
 	{ name: '/host', description: 'Show local server origin to copy/paste in Chrome flags' },
 	{ name: '/open', description: 'Open a file in the inline editor' },
 	{ name: '/type', description: 'Enter typing mode to send text to the remote computer' },
-	{ name: '/key-shortcut', description: 'Trigger a keyboard shortcut on the remote computer (e.g. /key-shortcut shift+ctrl+b)' },
+	{ name: '/keys', description: 'Trigger a keyboard shortcut on the remote computer (e.g. /keys shift+ctrl+b)' },
 	{
 		name: '/add-pin',
 		description: 'Pin a directory to bookmarks (defaults to current directory if no path specified)'
@@ -734,12 +734,12 @@ function setupInputListeners(input_elem) {
 	input_elem.addEventListener('input', () => {
 		const text = input_elem.textContent.replace(/\xa0/g, ' ');
 
-		if (text.startsWith('/key-shortcut ') || text.startsWith('/key-shorcut ')) {
-			const cmdLen = text.startsWith('/key-shortcut ') ? 14 : 13;
+		if (text.startsWith('/keys ')) {
+			const cmdLen = 6;
 			const arg = text.substring(cmdLen);
 			if (arg.includes(' ') || arg.includes('\xa0')) {
 				const cleanArg = arg.replace(/[\s\xa0]+/g, '+');
-				input_elem.textContent = text.startsWith('/key-shortcut ') ? `/key-shortcut ${cleanArg}` : `/key-shorcut ${cleanArg}`;
+				input_elem.textContent = `/keys ${cleanArg}`;
 				placeCaretAtEnd(input_elem);
 				input_elem.dispatchEvent(new Event('input'));
 				return;
@@ -778,8 +778,8 @@ function setupInputListeners(input_elem) {
 		} else if (text.startsWith('/unpin')) {
 			const query = text.substring(6).trim();
 			handlePinsSuggestions(query, '/unpin');
-		} else if (text.startsWith('/key-shortcut') || text.startsWith('/key-shorcut')) {
-			const cmdLen = text.startsWith('/key-shortcut') ? 13 : 12;
+		} else if (text.startsWith('/keys')) {
+			const cmdLen = 5;
 			const query = text.substring(cmdLen).trim();
 			if (text.charAt(cmdLen) === ' ') {
 				handleKeyShortcutSuggestions(query);
@@ -839,7 +839,7 @@ function setupInputListeners(input_elem) {
 
 					if (active_suggestion && active_suggestion.isKeyShortcutItem) {
 						const normalizedInput = input_elem.textContent.replace(/\xa0/g, ' ');
-						const cmdPrefix = normalizedInput.startsWith('/key-shortcut') ? '/key-shortcut' : '/key-shorcut';
+						const cmdPrefix = '/keys';
 						const suggestionCompletedText = `${cmdPrefix} ${active_suggestion.name}`;
 						const currentInputText = normalizedInput.trim();
 
@@ -988,7 +988,7 @@ function submitInput(text, usePro = false) {
   /open [path]    - Open a file in the inline editor
   /pins [name]    - Switch to a pinned directory
   /type           - Enter typing mode to send text to the remote computer
-  /key-shortcut [keys] - Trigger a keyboard shortcut on the remote computer (e.g. /key-shortcut shift+ctrl+b)
+  /keys [keys]    - Trigger a keyboard shortcut on the remote computer (e.g. /keys shift+ctrl+b)
   /unpin [name]   - Unpin a directory
   /shortcuts      - List available keyboard shortcuts with descriptions
   /test-md        - Simulate AI responding with markdown-debug-example.md content
@@ -1006,7 +1006,7 @@ function submitInput(text, usePro = false) {
 				placeCaretAtEnd(activeInput);
 			}
 			return;
-		} else if (trimmed.startsWith('/key-shortcut') || trimmed.startsWith('/key-shorcut')) {
+		} else if (trimmed.startsWith('/keys')) {
 			const parts = trimmed.split(/\s+/);
 			const arg = parts.slice(1).join('+');
 			if (arg) {
@@ -1025,7 +1025,7 @@ function submitInput(text, usePro = false) {
 				const active_block = document.getElementById('active-chat-block');
 				const out_pre = document.createElement('pre');
 				out_pre.className = 'output';
-				out_pre.textContent = 'Error: No keyboard shortcut specified. Usage: /key-shortcut shift+ctrl+b';
+				out_pre.textContent = 'Error: No keyboard shortcut specified. Usage: /keys shift+ctrl+b';
 				active_block.appendChild(out_pre);
 				appendNewPromptBlock(current_cwd);
 			}

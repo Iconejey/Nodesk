@@ -1573,7 +1573,26 @@ window.addEventListener('DOMContentLoaded', () => {
 			});
 		}
 
-		startSubnetScan();
+		// Try to auto-connect to the last successful session saved in localStorage
+		const savedIp = localStorage.getItem('nono_ip');
+		const savedPort = localStorage.getItem('nono_port');
+		const savedWindowId = localStorage.getItem('nono_window_id');
+
+		if (savedIp && savedPort && savedWindowId) {
+			document.body.classList.add('conn-active');
+			renderConnectionOverlay(`Auto-connecting to Host ${savedIp}:${savedPort}...`);
+			window.api
+				.connectToHost(savedIp, savedPort, savedWindowId)
+				.then(() => {
+					document.body.classList.remove('conn-active');
+				})
+				.catch(err => {
+					console.warn('Failed to auto-connect to saved host:', err);
+					startSubnetScan();
+				});
+		} else {
+			startSubnetScan();
+		}
 	}
 });
 

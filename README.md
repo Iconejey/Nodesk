@@ -6,10 +6,11 @@ Nono-Terminal is an Electron-based persistent terminal emulator integrated with 
 
 ## Todo list
 
+- Multi-line input support on mobile devices using "!" prefix and `chat_bubble` icon.
+- Wrap all AI work prints in the same collapsed output block.
 - /context slash command to view the current context window size and contents.
 - Autocompletion for file paths and directory names in the prompt.
 - AI autocomplete suggestions for terminal input and code editing.
-- Multi-line input support on mobile devices.
 - Full git management using commit (messages, button), push, pull and commit history in the currently implemented changes/diff page, renaming it "git management" page.
 - Better file edit output print.
 - /web {query} slash command to do a web search

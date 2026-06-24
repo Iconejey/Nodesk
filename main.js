@@ -1769,6 +1769,15 @@ const tools_definition = [
   },
 ];
 
+function getModelMaxTokens(model_name) {
+  if (!model_name) return 1048576;
+  const name = model_name.toLowerCase();
+  if (name.includes("pro")) {
+    return 2097152;
+  }
+  return 1048576;
+}
+
 // Agent execution loop
 async function runAgentLoop(session, prompt, usePro) {
   const web_contents = {
@@ -1777,6 +1786,15 @@ async function runAgentLoop(session, prompt, usePro) {
   };
   const config = loadConfig();
   const model_name = usePro ? config.pro_model : config.flash_model;
+
+  let current_tokens = null;
+  const sendStatus = (status) => {
+    if (current_tokens) {
+      web_contents.send("agent-status", status, current_tokens);
+    } else {
+      web_contents.send("agent-status", status);
+    }
+  };
 
   if (!config.api_key) {
     web_contents.send("agent-chunk", {
@@ -1819,7 +1837,7 @@ async function runAgentLoop(session, prompt, usePro) {
         session.messages.unshift(system_msg);
       }
 
-      web_contents.send("agent-status", "Thinking...");
+      sendStatus("Thinking...");
 
       const response = await callOpenAiWithRetry(
         (signal) =>
@@ -1833,9 +1851,17 @@ async function runAgentLoop(session, prompt, usePro) {
           ),
         3,
         (attempt, maxAttempts) => {
-          web_contents.send("agent-status", "Timeout, retrying...");
+          sendStatus("Timeout, retrying...");
         }
       );
+
+      if (response && response.usage) {
+        current_tokens = {
+          prompt_tokens: response.usage.prompt_tokens,
+          max_tokens: getModelMaxTokens(model_name),
+        };
+        sendStatus("Thinking...");
+      }
 
       const choice = response.choices[0];
       const message = choice.message;
@@ -1846,7 +1872,30 @@ async function runAgentLoop(session, prompt, usePro) {
         web_contents.send("agent-chunk", { text: message.content });
       }
 
+      // If the model hit its token limit mid-response, nudge it to continue
+      if (choice.finish_reason === "length") {
+        sendStatus("Context limit reached, continuing...");
+        session.messages.push({ role: "user", content: "Continue where you left off." });
+        continue;
+      }
+
       if (!message.tool_calls || message.tool_calls.length === 0) {
+        // Detect if the response has thinking but no external content and no tool calls.
+        // If so, nudge the model instead of breaking.
+        if (message.content) {
+          const stripped = message.content
+            .replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
+            .replace(/<thinking>[\s\S]*/gi, "")
+            .trim();
+          const hasThinking = /<thinking>/i.test(message.content);
+          if (hasThinking && stripped === "") {
+            session.messages.push({
+              role: "user",
+              content: "Proceed to call the appropriate tool.",
+            });
+            continue;
+          }
+        }
         break;
       }
 
@@ -1944,7 +1993,9 @@ async function runAgentLoop(session, prompt, usePro) {
           result: tool_result,
         });
 
-        if (is_error) {
+        // Only count errors from tools that truly failed (not non-zero shell exit codes,
+        // which are normal for commands like grep, diff, test, etc.)
+        if (is_error && name !== "execute_command") {
           consecutive_errors++;
           if (consecutive_errors >= 3) {
             web_contents.send("agent-chunk", {

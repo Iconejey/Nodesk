@@ -370,7 +370,51 @@ let active_message_content = null;
 let active_agent_run_details = null;
 let active_agent_run_content = null;
 let active_agent_run_status = null;
+let current_agent_tokens = null;
 let current_thinking_block = null;
+
+function formatTokenCount(num) {
+	if (typeof num !== 'number') return num;
+	if (num < 1000) {
+		return num.toString();
+	}
+	if (num >= 1000000) {
+		const val = num / 1000000;
+		const formatted = val.toFixed(1);
+		return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'M';
+	}
+	const val = num / 1000;
+	const formatted = val.toFixed(1);
+	return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'K';
+}
+
+function updateAgentStatusDisplay(text) {
+	if (!active_agent_run_status) return;
+	
+	let baseText = text;
+	const parenIndex = baseText.indexOf(' (');
+	if (parenIndex !== -1 && baseText.includes('/')) {
+		baseText = baseText.substring(0, parenIndex);
+	}
+	
+	if (current_agent_tokens && current_agent_tokens.max_tokens) {
+		const promptStr = formatTokenCount(current_agent_tokens.prompt_tokens);
+		const maxStr = formatTokenCount(current_agent_tokens.max_tokens);
+		active_agent_run_status.textContent = `${baseText} (${promptStr} / ${maxStr} tokens)`;
+	} else {
+		active_agent_run_status.textContent = baseText;
+	}
+}
+
+function getAgentStatusBaseText() {
+	if (!active_agent_run_status) return '';
+	const text = active_agent_run_status.textContent;
+	const parenIndex = text.indexOf(' (');
+	if (parenIndex !== -1 && text.includes('/')) {
+		return text.substring(0, parenIndex);
+	}
+	return text;
+}
 
 let available_commands = new Set();
 
@@ -620,7 +664,8 @@ function initAgentRunUI() {
 
 	active_agent_run_status = document.createElement('span');
 	active_agent_run_status.className = 'status-text';
-	active_agent_run_status.textContent = 'Working...';
+	current_agent_tokens = null;
+	updateAgentStatusDisplay('Working...');
 	summary.appendChild(active_agent_run_status);
 	active_agent_run_details.appendChild(summary);
 
@@ -3096,13 +3141,18 @@ window.api.onShellComplete(info => {
 
 // Agent messages and tool responses
 
-window.api.onAgentStatus(status => {
-	console.log('Agent status:', status);
+window.api.onAgentStatus((status, tokens) => {
+	console.log('Agent status:', status, tokens);
+	if (tokens) {
+		current_agent_tokens = tokens;
+	}
 	if (active_agent_run_details) {
 		if (active_agent_run_status) {
-			const current = active_agent_run_status.textContent;
+			const current = getAgentStatusBaseText();
 			if (current === 'Working...' || current === 'Thinking...' || (status !== 'Thinking...' && status !== 'Working...')) {
-				active_agent_run_status.textContent = status;
+				updateAgentStatusDisplay(status);
+			} else if (tokens) {
+				updateAgentStatusDisplay(current);
 			}
 		}
 		if (status === 'Timeout, retrying...') {
@@ -3126,9 +3176,9 @@ window.api.onAgentChunk(info => {
 	const parsed = parseThinkingAndContent(active_assistant_text);
 
 	if (active_agent_run_status) {
-		const current = active_agent_run_status.textContent;
+		const current = getAgentStatusBaseText();
 		if (current === 'Working...') {
-			active_agent_run_status.textContent = 'Thinking...';
+			updateAgentStatusDisplay('Thinking...');
 		}
 	}
 
@@ -3169,7 +3219,7 @@ window.api.onAgentToolStart(info => {
 		const commandText = info.args.command;
 
 		if (active_agent_run_status) {
-			active_agent_run_status.textContent = commandText;
+			updateAgentStatusDisplay(commandText);
 		}
 
 		const pre_input = document.createElement('pre');
@@ -3186,7 +3236,7 @@ window.api.onAgentToolStart(info => {
 		active_output_block = pre_output;
 	} else {
 		if (active_agent_run_status) {
-			active_agent_run_status.textContent = label + '...';
+			updateAgentStatusDisplay(label + '...');
 		}
 
 		const pre_status = document.createElement('pre');
@@ -3235,10 +3285,6 @@ window.api.onAgentComplete(() => {
 	hideCancelButton();
 
 	const finalParsed = parseThinkingAndContent(active_assistant_text);
-	console.log('AI Response:', {
-		raw: active_assistant_text,
-		parsed: finalParsed
-	});
 
 	if (current_thinking_block) {
 		if (finalParsed.thinking) {
@@ -3779,9 +3825,9 @@ function simulateAgentResponse(fullText) {
 		const parsed = parseThinkingAndContent(active_assistant_text);
 
 		if (active_agent_run_status) {
-			const current = active_agent_run_status.textContent;
+			const current = getAgentStatusBaseText();
 			if (current === 'Working...') {
-				active_agent_run_status.textContent = 'Thinking...';
+				updateAgentStatusDisplay('Thinking...');
 			}
 		}
 

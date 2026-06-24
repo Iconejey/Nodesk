@@ -21,7 +21,7 @@ contextBridge.exposeInMainWorld("api", {
   onAgentToolComplete: (callback) =>
     ipcRenderer.on("agent-tool-complete", (event, info) => callback(info)),
   onAgentStatus: (callback) =>
-    ipcRenderer.on("agent-status", (event, status) => callback(status)),
+    ipcRenderer.on("agent-status", (event, ...args) => callback(...args)),
   onWindowInit: (callback) =>
     ipcRenderer.on("window-init", (event, info) => callback(info)),
   onShowQrCode: (callback) =>

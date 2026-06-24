@@ -120,7 +120,6 @@ terminal-chat {
 		&[from='assistant'] .input {
 			&::before {
 				content: '•';
-				color: var(--purple);
 			}
 
 			&.msg {
@@ -128,6 +127,7 @@ terminal-chat {
 
 				&::before {
 					content: '✦';
+					color: var(--purple);
 				}
 
 				&:not(.waiting):empty {
@@ -1569,4 +1569,96 @@ body.conn-active terminal-chat {
 
 #active-chat-block:has(.input.typing-mode) .send-type-btn {
 	display: inline-flex;
+}
+
+/* Collapsible agent execution details block */
+details.agent-run-details {
+	margin-bottom: 0.5rem;
+
+	& summary {
+		color: var(--gray);
+		cursor: pointer;
+		outline: none;
+		user-select: none;
+		list-style: none;
+
+		&::-webkit-details-marker {
+			display: none;
+		}
+
+		&::before {
+			content: 'arrow_right';
+			font-family: 'Material Symbols Outlined';
+			font-size: 1.15em;
+			vertical-align: -0.2em;
+			font-weight: normal;
+			font-style: normal;
+			line-height: 1;
+			text-transform: none;
+			letter-spacing: normal;
+			word-wrap: normal;
+			white-space: nowrap;
+			direction: ltr;
+			-webkit-font-smoothing: antialiased;
+			transition: transform 0.2s ease;
+			display: inline-block;
+			margin-right: 0.25rem;
+		}
+	}
+
+	&[open]:not(.running) summary::before {
+		transform: rotate(90deg);
+	}
+
+	&.running summary::before {
+		content: '✦';
+		font-family: 'Consolas', monospace;
+		color: var(--gray) !important;
+		display: inline-block;
+		animation: spin 2s linear infinite;
+		transform-origin: center;
+		margin-right: 0.25rem;
+	}
+
+	& .run-details-content {
+		margin-top: 6px;
+		margin-bottom: 0;
+		padding-left: 1.5rem;
+		border-left: 1px solid var(--gray-dark);
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+	}
+
+	& pre.thinking-content {
+		margin: 0;
+		white-space: pre-wrap;
+		color: var(--gray);
+	}
+
+	& pre.input {
+		position: relative;
+		padding-left: 1.5rem;
+		font-family: 'Consolas', monospace;
+		outline: none;
+		line-height: 1.3;
+		color: var(--gray);
+
+		&::before {
+			position: absolute;
+			left: 0;
+			top: 0.05em;
+			content: '•';
+			color: var(--purple);
+		}
+	}
+
+	& pre.output {
+		white-space: pre-wrap;
+		font-family: 'Consolas', monospace;
+		margin: 0;
+		outline: none;
+		line-height: 1.3;
+		color: var(--gray-light);
+	}
 }

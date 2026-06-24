@@ -367,6 +367,11 @@ let active_thinking_details = null;
 let active_thinking_content = null;
 let active_message_content = null;
 
+let active_agent_run_details = null;
+let active_agent_run_content = null;
+let active_agent_run_status = null;
+let current_thinking_block = null;
+
 let available_commands = new Set();
 
 // Heuristic to detect if input represents a shell command vs AI prompt
@@ -550,6 +555,63 @@ function updateThinkingSummary(details, content) {
 	} else {
 		summary.textContent = `Reasoning Process (${line_count} line${line_count === 1 ? '' : 's'})`;
 	}
+}
+
+function updateAgentRunSummary(details) {
+	const statusSpan = details.querySelector('.status-text');
+	if (!statusSpan) return;
+	if (details.classList.contains('running')) {
+		return;
+	}
+	if (details.open) {
+		statusSpan.textContent = 'Agent Process';
+	} else {
+		const contentDiv = details.querySelector('.run-details-content');
+		let stepsCount = 0;
+		if (contentDiv) {
+			stepsCount = Array.from(contentDiv.children).filter(child => {
+				return child.classList.contains('input') || child.classList.contains('thinking-content');
+			}).length;
+		}
+		statusSpan.textContent = `Agent Process (${stepsCount} step${stepsCount === 1 ? '' : 's'})`;
+	}
+}
+
+function initAgentRunUI() {
+	const container = document.getElementById('terminal-chat-container');
+
+	active_assistant_block = document.createElement('chat-block');
+	active_assistant_block.setAttribute('from', 'assistant');
+
+	active_agent_run_details = document.createElement('details');
+	active_agent_run_details.className = 'agent-run-details running';
+
+	const summary = document.createElement('summary');
+	summary.className = 'chat-marker';
+	active_agent_run_status = document.createElement('span');
+	active_agent_run_status.className = 'status-text';
+	active_agent_run_status.textContent = 'Working...';
+	summary.appendChild(active_agent_run_status);
+	active_agent_run_details.appendChild(summary);
+
+	active_agent_run_content = document.createElement('div');
+	active_agent_run_content.className = 'run-details-content';
+	active_agent_run_details.appendChild(active_agent_run_content);
+
+	active_assistant_block.appendChild(active_agent_run_details);
+	container.appendChild(active_assistant_block);
+
+	active_assistant_text = '';
+	current_thinking_block = null;
+	active_thinking_details = null;
+	active_thinking_content = null;
+	active_message_content = null;
+
+	active_agent_run_details.addEventListener('toggle', () => {
+		updateAgentRunSummary(active_agent_run_details);
+	});
+
+	window.scrollTo(0, document.body.scrollHeight);
 }
 
 // Helper to count lines and create a collapse placeholder
@@ -1393,25 +1455,7 @@ function submitInput(text, usePro = false) {
 
 		window.api.sendUserCommand(trimmed);
 	} else {
-		// Create a waiting block to show loading state
-		const container = document.getElementById('terminal-chat-container');
-
-		active_assistant_block = document.createElement('chat-block');
-		active_assistant_block.setAttribute('from', 'assistant');
-
-		active_message_content = document.createElement('div');
-		active_message_content.className = 'input msg waiting chat-marker';
-
-		active_assistant_block.appendChild(active_message_content);
-		container.appendChild(active_assistant_block);
-
-		active_assistant_text = '';
-		active_thinking_details = null;
-		active_thinking_content = null;
-
-		window.scrollTo(0, document.body.scrollHeight);
-
-		// Send to agent loop
+		initAgentRunUI();
 		window.api.sendAgentPrompt(trimmed, usePro);
 	}
 }
@@ -2944,22 +2988,7 @@ window.api.onAgentPromptStart(({ prompt, usePro }) => {
 		input_elem.removeAttribute('contenteditable');
 		input_elem.classList.add('ai-prompt');
 
-		const container = document.getElementById('terminal-chat-container');
-
-		active_assistant_block = document.createElement('chat-block');
-		active_assistant_block.setAttribute('from', 'assistant');
-
-		active_message_content = document.createElement('div');
-		active_message_content.className = 'input msg waiting chat-marker';
-
-		active_assistant_block.appendChild(active_message_content);
-		container.appendChild(active_assistant_block);
-
-		active_assistant_text = '';
-		active_thinking_details = null;
-		active_thinking_content = null;
-
-		window.scrollTo(0, document.body.scrollHeight);
+		initAgentRunUI();
 		hideSuggestions();
 	}
 });
@@ -2990,139 +3019,98 @@ window.api.onAgentStatus(status => {
 });
 
 window.api.onAgentChunk(info => {
-	// Create assistant message block if needed
-	if (!active_assistant_block) {
-		const container = document.getElementById('terminal-chat-container');
-
-		active_assistant_block = document.createElement('chat-block');
-		active_assistant_block.setAttribute('from', 'assistant');
-
-		active_message_content = document.createElement('div');
-		active_message_content.className = 'input msg chat-marker';
-
-		active_assistant_block.appendChild(active_message_content);
-		container.appendChild(active_assistant_block);
-
-		active_assistant_text = '';
-		active_thinking_details = null;
-		active_thinking_content = null;
+	if (!active_assistant_block || !active_agent_run_details) {
+		initAgentRunUI();
 	}
 
 	active_assistant_text += info.text;
 
-	// Parse reasoning / thinking blocks
 	const parsed = parseThinkingAndContent(active_assistant_text);
 
+	if (active_agent_run_status) {
+		active_agent_run_status.textContent = 'Thinking...';
+	}
+
+	if (!current_thinking_block) {
+		current_thinking_block = document.createElement('pre');
+		current_thinking_block.className = 'thinking-content';
+		active_agent_run_content.appendChild(current_thinking_block);
+	}
+
+	let textToShow = '';
 	if (parsed.thinking) {
-		if (!active_thinking_details) {
-			active_thinking_details = document.createElement('details');
-			active_thinking_details.className = 'thinking-details';
-			active_thinking_details.setAttribute('open', 'true');
-
-			const summary = document.createElement('summary');
-			summary.className = 'chat-marker';
-			summary.textContent = 'Reasoning Process';
-
-			active_thinking_content = document.createElement('pre');
-			active_thinking_content.className = 'thinking-content';
-
-			active_thinking_details.appendChild(summary);
-			active_thinking_details.appendChild(active_thinking_content);
-
-			active_thinking_details.addEventListener('toggle', () => {
-				updateThinkingSummary(active_thinking_details, active_thinking_content);
-			});
-
-			active_assistant_block.insertBefore(active_thinking_details, active_message_content);
-		}
-		active_thinking_content.textContent = parsed.thinking;
-		updateThinkingSummary(active_thinking_details, active_thinking_content);
+		textToShow += parsed.thinking;
+	}
+	if (parsed.content) {
+		if (textToShow) textToShow += '\n';
+		textToShow += parsed.content;
 	}
 
-	if (window.marked) {
-		active_message_content.innerHTML = window.marked.parse(parsed.content);
-		if (window.Prism) {
-			window.Prism.highlightAllUnder(active_message_content);
-		}
-	} else {
-		active_message_content.textContent = parsed.content;
-	}
-
-	// Automatically collapse reasoning/thinking block when real content starts coming
-	if (parsed.content && active_thinking_details && active_thinking_details.open && !active_thinking_details.dataset.collapsedAutomatically) {
-		active_thinking_details.open = false;
-		active_thinking_details.dataset.collapsedAutomatically = 'true';
-	}
+	current_thinking_block.textContent = textToShow;
 
 	window.scrollTo(0, document.body.scrollHeight);
 });
 
 window.api.onAgentToolStart(info => {
-	// Stop waiting state of current assistant message segment
-	if (active_assistant_block && active_message_content) {
-		if (active_message_content.classList.contains('waiting')) {
-			active_message_content.classList.remove('waiting');
-		}
-		if (!active_message_content.textContent && !active_thinking_details) {
-			active_assistant_block.remove();
-		}
+	if (!active_assistant_block || !active_agent_run_details) {
+		initAgentRunUI();
 	}
-	active_assistant_block = null;
 
-	const container = document.getElementById('terminal-chat-container');
-	const chat_block = document.createElement('chat-block');
-	chat_block.setAttribute('from', 'assistant');
+	let label = '';
+	if (info.name === 'read_file') label = `Reading ${info.args.path}`;
+	else if (info.name === 'edit_file') label = `Editing ${info.args.path}`;
+	else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
+	else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
+	else if (info.name === 'web_search') label = `Searching the web for "${info.args.query}"`;
+	else label = `Running ${info.name}...`;
+
+	if (active_agent_run_status) {
+		active_agent_run_status.textContent = label;
+	}
 
 	if (info.name === 'execute_command') {
-		// Show command as an input block
+		if (active_agent_run_status) {
+			active_agent_run_status.textContent = `Running: ${info.args.command}`;
+		}
+
 		const pre_input = document.createElement('pre');
 		pre_input.className = 'input chat-marker';
+		pre_input.dataset.toolCallId = info.tool_call_id;
 		pre_input.textContent = info.args.command;
 
 		const pre_output = document.createElement('pre');
 		pre_output.className = 'output';
 
-		chat_block.appendChild(pre_input);
-		chat_block.appendChild(pre_output);
-		container.appendChild(chat_block);
+		active_agent_run_content.appendChild(pre_input);
+		active_agent_run_content.appendChild(pre_output);
 
 		active_output_block = pre_output;
 	} else {
-		// Other tools (e.g. read_file, edit_file) shown as tool status lines
 		const pre_status = document.createElement('pre');
 		pre_status.className = 'input chat-marker';
 		pre_status.dataset.toolCallId = info.tool_call_id;
-
-		let label = '';
-		if (info.name === 'read_file') label = `Reading ${info.args.path}`;
-		else if (info.name === 'edit_file') label = `Editing ${info.args.path}`;
-		else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
-		else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
-		else if (info.name === 'web_search') label = `Searching the web for "${info.args.query}"`;
-		else label = `Running ${info.name}...`;
-
 		pre_status.textContent = label;
-		chat_block.appendChild(pre_status);
-		container.appendChild(chat_block);
+
+		active_agent_run_content.appendChild(pre_status);
 	}
+
+	active_assistant_text = '';
+	current_thinking_block = null;
 
 	window.scrollTo(0, document.body.scrollHeight);
 });
 
 window.api.onAgentToolOutput(info => {
-	// If we receive a colorized diff from edit_file, we output it under the tool line
 	const container = document.getElementById('terminal-chat-container');
 	const active_tool_elem = container.querySelector(`pre.input[data-tool-call-id="${info.tool_call_id}"]`);
 
 	if (active_tool_elem) {
-		const parent = active_tool_elem.parentNode;
-		let diff_pre = parent.querySelector('pre.output');
-		if (!diff_pre) {
+		let diff_pre = active_tool_elem.nextElementSibling;
+		if (!diff_pre || !diff_pre.classList.contains('output')) {
 			diff_pre = document.createElement('pre');
 			diff_pre.className = 'output';
-			parent.appendChild(diff_pre);
+			active_tool_elem.after(diff_pre);
 		}
-		// Set formatted diff text using safe innerHTML
 		diff_pre.innerHTML = formatDiffText(info.text);
 		addOutputPlaceholder(diff_pre);
 	} else if (active_output_block) {
@@ -3142,17 +3130,48 @@ window.api.onAgentToolComplete(info => {
 
 window.api.onAgentComplete(() => {
 	hideCancelButton();
+	
+	const finalParsed = parseThinkingAndContent(active_assistant_text);
 	console.log('AI Response:', {
 		raw: active_assistant_text,
-		parsed: parseThinkingAndContent(active_assistant_text)
+		parsed: finalParsed
 	});
-	if (active_assistant_block && active_message_content) {
-		active_message_content.classList.remove('waiting');
-		if (!active_message_content.textContent && !active_thinking_details) {
-			active_assistant_block.remove();
+
+	if (current_thinking_block) {
+		if (finalParsed.thinking) {
+			current_thinking_block.textContent = finalParsed.thinking;
+		} else {
+			current_thinking_block.remove();
 		}
 	}
+
+	if (active_agent_run_details) {
+		active_agent_run_details.classList.remove('running');
+		updateAgentRunSummary(active_agent_run_details);
+	}
+
+	if (finalParsed.content && active_assistant_block) {
+		active_message_content = document.createElement('div');
+		active_message_content.className = 'input msg chat-marker';
+
+		if (window.marked) {
+			active_message_content.innerHTML = window.marked.parse(finalParsed.content);
+			if (window.Prism) {
+				window.Prism.highlightAllUnder(active_message_content);
+			}
+		} else {
+			active_message_content.textContent = finalParsed.content;
+		}
+
+		active_assistant_block.appendChild(active_message_content);
+	}
+
 	active_assistant_block = null;
+	active_agent_run_details = null;
+	active_agent_run_content = null;
+	active_agent_run_status = null;
+	current_thinking_block = null;
+
 	appendNewPromptBlock();
 });
 
@@ -3600,22 +3619,7 @@ function toggleLineNumbers() {
 }
 
 function simulateAgentResponse(fullText) {
-	const container = document.getElementById('terminal-chat-container');
-
-	active_assistant_block = document.createElement('chat-block');
-	active_assistant_block.setAttribute('from', 'assistant');
-
-	active_message_content = document.createElement('div');
-	active_message_content.className = 'input msg waiting chat-marker';
-
-	active_assistant_block.appendChild(active_message_content);
-	container.appendChild(active_assistant_block);
-
-	active_assistant_text = '';
-	active_thinking_details = null;
-	active_thinking_content = null;
-
-	window.scrollTo(0, document.body.scrollHeight);
+	initAgentRunUI();
 
 	const chunkSize = 30;
 	let currentIndex = 0;
@@ -3624,10 +3628,43 @@ function simulateAgentResponse(fullText) {
 		if (currentIndex >= fullText.length) {
 			clearInterval(intervalId);
 
-			if (active_assistant_block && active_message_content) {
-				active_message_content.classList.remove('waiting');
+			const finalParsed = parseThinkingAndContent(active_assistant_text);
+
+			if (current_thinking_block) {
+				if (finalParsed.thinking) {
+					current_thinking_block.textContent = finalParsed.thinking;
+				} else {
+					current_thinking_block.remove();
+				}
 			}
+
+			if (active_agent_run_details) {
+				active_agent_run_details.classList.remove('running');
+				updateAgentRunSummary(active_agent_run_details);
+			}
+
+			if (finalParsed.content && active_assistant_block) {
+				active_message_content = document.createElement('div');
+				active_message_content.className = 'input msg chat-marker';
+
+				if (window.marked) {
+					active_message_content.innerHTML = window.marked.parse(finalParsed.content);
+					if (window.Prism) {
+						window.Prism.highlightAllUnder(active_message_content);
+					}
+				} else {
+					active_message_content.textContent = finalParsed.content;
+				}
+
+				active_assistant_block.appendChild(active_message_content);
+			}
+
 			active_assistant_block = null;
+			active_agent_run_details = null;
+			active_agent_run_content = null;
+			active_agent_run_status = null;
+			current_thinking_block = null;
+
 			appendNewPromptBlock();
 			return;
 		}
@@ -3638,45 +3675,26 @@ function simulateAgentResponse(fullText) {
 		active_assistant_text += chunkText;
 		const parsed = parseThinkingAndContent(active_assistant_text);
 
+		if (active_agent_run_status) {
+			active_agent_run_status.textContent = 'Thinking...';
+		}
+
+		if (!current_thinking_block) {
+			current_thinking_block = document.createElement('pre');
+			current_thinking_block.className = 'thinking-content';
+			active_agent_run_content.appendChild(current_thinking_block);
+		}
+
+		let textToShow = '';
 		if (parsed.thinking) {
-			if (!active_thinking_details) {
-				active_thinking_details = document.createElement('details');
-				active_thinking_details.className = 'thinking-details';
-				active_thinking_details.setAttribute('open', 'true');
-
-				const summary = document.createElement('summary');
-				summary.className = 'chat-marker';
-				summary.textContent = 'Reasoning Process';
-
-				active_thinking_content = document.createElement('pre');
-				active_thinking_content.className = 'thinking-content';
-
-				active_thinking_details.appendChild(summary);
-				active_thinking_details.appendChild(active_thinking_content);
-
-				active_thinking_details.addEventListener('toggle', () => {
-					updateThinkingSummary(active_thinking_details, active_thinking_content);
-				});
-
-				active_assistant_block.insertBefore(active_thinking_details, active_message_content);
-			}
-			active_thinking_content.textContent = parsed.thinking;
-			updateThinkingSummary(active_thinking_details, active_thinking_content);
+			textToShow += parsed.thinking;
+		}
+		if (parsed.content) {
+			if (textToShow) textToShow += '\n';
+			textToShow += parsed.content;
 		}
 
-		if (window.marked) {
-			active_message_content.innerHTML = window.marked.parse(parsed.content);
-			if (window.Prism) {
-				window.Prism.highlightAllUnder(active_message_content);
-			}
-		} else {
-			active_message_content.textContent = parsed.content;
-		}
-
-		if (parsed.content && active_thinking_details && active_thinking_details.open && !active_thinking_details.dataset.collapsedAutomatically) {
-			active_thinking_details.open = false;
-			active_thinking_details.dataset.collapsedAutomatically = 'true';
-		}
+		current_thinking_block.textContent = textToShow;
 
 		window.scrollTo(0, document.body.scrollHeight);
 	}, 15);

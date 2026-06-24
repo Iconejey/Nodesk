@@ -71,7 +71,20 @@ function renderConnectionOverlay(statusText, windowsList = []) {
 	body.appendChild(section);
 }
 
-async function startSubnetScan() {
+function getTargetUrl(ip, port) {
+	if (ip.startsWith('http://') || ip.startsWith('https://')) {
+		return ip;
+	}
+	const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+	const hasPort = ip.includes(':');
+	const protocol = (window.location.protocol === 'https:' && !isIp) ? 'https' : 'http';
+	if (hasPort || isIp || ip === 'localhost') {
+		return `${protocol}://${ip}${hasPort ? '' : ':' + port}`;
+	}
+	return `${protocol}://${ip}`;
+}
+
+async function startSubnetScan(ignoreKnown = false) {
 	if (isScanning) {
 		if (scanAbortController) {
 			scanAbortController.abort();
@@ -103,6 +116,65 @@ async function startSubnetScan() {
 	scanAbortController = new AbortController();
 	let serverFound = false;
 
+	// Try known hosts first for instant PWA loading
+	if (!ignoreKnown) {
+		let knownHosts = [];
+		try {
+			const saved = JSON.parse(localStorage.getItem('nono_known_hosts')) || [];
+			if (saved.length === 0) {
+				const oldIp = localStorage.getItem('nono_ip');
+				const oldPort = localStorage.getItem('nono_port');
+				if (oldIp && oldPort) {
+					saved.push({ ip: oldIp, port: oldPort });
+				}
+			}
+			knownHosts = saved;
+		} catch (e) {
+			// ignore
+		}
+
+		if (knownHosts.length > 0) {
+			renderConnectionOverlay('Checking known hosts...');
+			const knownBatch = knownHosts.map(async (host) => {
+				if (serverFound || (window.api && window.api.windowId)) return;
+				try {
+					const baseUrl = getTargetUrl(host.ip, host.port);
+					const res = await fetch(`${baseUrl}/api/active-windows`, {
+						signal: scanAbortController.signal
+					});
+					if (res.ok) {
+						const data = await res.json();
+						if (data.windows && data.windows.length > 0) {
+							serverFound = true;
+							scanAbortController.abort(); // Cancel other pending requests
+							data.windows.forEach(w => {
+								const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
+								const exists = window.discoveredWindows.some(d => d.ip === host.ip && d.port === host.port && d.id === w.id);
+								if (!exists) {
+									window.discoveredWindows.push({
+										ip: host.ip,
+										port: host.port,
+										id: w.id,
+										timeStr,
+										cwd: w.cwd
+									});
+								}
+							});
+							renderConnectionOverlay('', window.discoveredWindows);
+						}
+					}
+				} catch (e) {
+					// ignore
+				}
+			});
+			try {
+				await Promise.all(knownBatch);
+			} catch (e) {
+				// ignore
+			}
+		}
+	}
+
 	for (const subnet of subnets) {
 		if (serverFound || (window.api && window.api.windowId)) break;
 
@@ -131,13 +203,16 @@ async function startSubnetScan() {
 
 										data.windows.forEach(w => {
 											const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
-											window.discoveredWindows.push({
-												ip,
-												port: p,
-												id: w.id,
-												timeStr,
-												cwd: w.cwd
-											});
+											const exists = window.discoveredWindows.some(d => d.ip === ip && d.port === p && d.id === w.id);
+											if (!exists) {
+												window.discoveredWindows.push({
+													ip,
+													port: p,
+													id: w.id,
+													timeStr,
+													cwd: w.cwd
+												});
+											}
 										});
 
 										renderConnectionOverlay('', window.discoveredWindows);
@@ -211,6 +286,7 @@ const slash_commands = [
 	{ name: '/exit', description: 'Close current window' },
 	{ name: '/fullscreen', description: 'Toggle fullscreen mode for the window' },
 	{ name: '/help', description: 'Show list of available commands' },
+	{ name: '/host', description: 'Show local server origin to copy/paste in Chrome flags' },
 	{ name: '/open', description: 'Open a file in the inline editor' },
 	{
 		name: '/add-pin',
@@ -1569,30 +1645,11 @@ window.addEventListener('DOMContentLoaded', () => {
 		const rescanBtn = document.getElementById('conn-btn-refresh');
 		if (rescanBtn) {
 			rescanBtn.addEventListener('click', () => {
-				startSubnetScan();
+				startSubnetScan(true); // Ignore known hosts on manual refresh/rescan
 			});
 		}
 
-		// Try to auto-connect to the last successful session saved in localStorage
-		const savedIp = localStorage.getItem('nono_ip');
-		const savedPort = localStorage.getItem('nono_port');
-		const savedWindowId = localStorage.getItem('nono_window_id');
-
-		if (savedIp && savedPort && savedWindowId) {
-			document.body.classList.add('conn-active');
-			renderConnectionOverlay(`Auto-connecting to Host ${savedIp}:${savedPort}...`);
-			window.api
-				.connectToHost(savedIp, savedPort, savedWindowId)
-				.then(() => {
-					document.body.classList.remove('conn-active');
-				})
-				.catch(err => {
-					console.warn('Failed to auto-connect to saved host:', err);
-					startSubnetScan();
-				});
-		} else {
-			startSubnetScan();
-		}
+		startSubnetScan(false); // Check known hosts first on startup
 	}
 });
 

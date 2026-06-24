@@ -789,6 +789,27 @@ async function executeSlashCommandForWindow(windowId, command_str) {
         cwd: data.session.current_cwd,
       });
     }
+  } else if (command_name === "/host") {
+    try {
+      const ip = getLocalIpAddress();
+      sendToWindow(windowId, "shell-output", {
+        text: `http://${ip}:${server_port}\n`,
+        is_stderr: false,
+      });
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 0,
+        cwd: data.session.current_cwd,
+      });
+    } catch (err) {
+      sendToWindow(windowId, "shell-output", {
+        text: `Error getting host details: ${err.message}\n`,
+        is_stderr: true,
+      });
+      sendToWindow(windowId, "shell-complete", {
+        exit_code: 1,
+        cwd: data.session.current_cwd,
+      });
+    }
   } else if (command_name === "/fullscreen") {
     try {
       const isFS = data.win.isFullScreen();

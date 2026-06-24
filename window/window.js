@@ -3016,6 +3016,19 @@ window.api.onShellComplete(info => {
 
 window.api.onAgentStatus(status => {
 	console.log('Agent status:', status);
+	if (active_agent_run_details) {
+		if (active_agent_run_status) {
+			active_agent_run_status.textContent = status;
+		}
+		if (status === 'Timeout, retrying...') {
+			const pre_timeout = document.createElement('pre');
+			pre_timeout.className = 'thinking-content';
+			pre_timeout.style.color = 'var(--red)';
+			pre_timeout.textContent = 'Timeout, retrying...';
+			active_agent_run_content.appendChild(pre_timeout);
+			current_thinking_block = null;
+		}
+	}
 });
 
 window.api.onAgentChunk(info => {

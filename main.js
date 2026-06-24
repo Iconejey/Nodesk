@@ -1591,7 +1591,7 @@ This is required before calling any tool or producing any response.
 }
 
 // OpenAI call timeout/retry wrapper
-async function callOpenAiWithRetry(fn, attempts = 3) {
+async function callOpenAiWithRetry(fn, attempts = 3, onTimeout = null) {
   for (let i = 0; i < attempts; i++) {
     const controller = new AbortController();
     const timeout_id = setTimeout(() => {
@@ -1608,6 +1608,9 @@ async function callOpenAiWithRetry(fn, attempts = 3) {
         console.warn(
           `OpenAI call timed out. Retrying attempt ${i + 2}/${attempts}...`,
         );
+        if (onTimeout) {
+          onTimeout(i + 1, attempts);
+        }
         if (i === attempts - 1) {
           throw new Error(
             "OpenAI request timed out after " + attempts + " attempts.",
@@ -1818,15 +1821,20 @@ async function runAgentLoop(session, prompt, usePro) {
 
       web_contents.send("agent-status", "Thinking...");
 
-      const response = await callOpenAiWithRetry((signal) =>
-        openai.chat.completions.create(
-          {
-            model: model_name,
-            messages: session.messages,
-            tools: tools_definition,
-          },
-          { signal },
-        ),
+      const response = await callOpenAiWithRetry(
+        (signal) =>
+          openai.chat.completions.create(
+            {
+              model: model_name,
+              messages: session.messages,
+              tools: tools_definition,
+            },
+            { signal },
+          ),
+        3,
+        (attempt, maxAttempts) => {
+          web_contents.send("agent-status", "Timeout, retrying...");
+        }
       );
 
       const choice = response.choices[0];

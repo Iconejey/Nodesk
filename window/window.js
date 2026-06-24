@@ -81,7 +81,7 @@ function renderConnectionOverlay(statusText, windowsList = []) {
 				const reqFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
 				if (reqFS) {
 					reqFS.call(docEl).catch(err => {
-						console.warn("Fullscreen request failed:", err);
+						console.warn('Fullscreen request failed:', err);
 					});
 				}
 			}
@@ -101,7 +101,7 @@ function getTargetUrl(ip, port) {
 	}
 	const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
 	const hasPort = ip.includes(':');
-	const protocol = (window.location.protocol === 'https:' && !isIp) ? 'https' : 'http';
+	const protocol = window.location.protocol === 'https:' && !isIp ? 'https' : 'http';
 	if (hasPort || isIp || ip === 'localhost') {
 		return `${protocol}://${ip}${hasPort ? '' : ':' + port}`;
 	}
@@ -172,7 +172,7 @@ async function startSubnetScan(ignoreKnown = false) {
 
 		if (knownHosts.length > 0) {
 			renderConnectionOverlay('Checking known hosts...');
-			const knownBatch = knownHosts.map(async (host) => {
+			const knownBatch = knownHosts.map(async host => {
 				if (serverFound || (window.api && window.api.windowId)) return;
 				try {
 					const baseUrl = getTargetUrl(host.ip, host.port);
@@ -467,7 +467,7 @@ function renderSuggestions(filtered) {
 					const reqFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
 					if (reqFS) {
 						reqFS.call(docEl).catch(err => {
-							console.warn("Fullscreen request failed:", err);
+							console.warn('Fullscreen request failed:', err);
 						});
 					}
 				}
@@ -631,7 +631,7 @@ function initAgentRunUI() {
 	active_thinking_content = null;
 	active_message_content = null;
 
-	active_agent_run_details.addEventListener('toggle', (e) => {
+	active_agent_run_details.addEventListener('toggle', e => {
 		updateAgentRunSummary(e.currentTarget);
 	});
 
@@ -704,11 +704,8 @@ function addOutputPlaceholder(output_elem) {
 
 	const shown = line_count > MAX_OUTPUT_LINES ? MAX_OUTPUT_LINES : line_count;
 	const total = line_count;
-	placeholder.textContent = total > MAX_OUTPUT_LINES
-		? `[${shown} / ${total} lines of output]`
-		: `[${total} line${total === 1 ? '' : 's'} of output]`;
+	placeholder.textContent = total > MAX_OUTPUT_LINES ? `[${shown} / ${total} lines of output]` : `[${total} line${total === 1 ? '' : 's'} of output]`;
 }
-
 
 // Create a new active prompt block at the bottom
 function appendNewPromptBlock(cwd) {
@@ -930,6 +927,12 @@ function setupInputListeners(input_elem) {
 			hideSuggestions();
 			open_command_cache = null;
 		}
+	});
+
+	input_elem.addEventListener('paste', e => {
+		e.preventDefault();
+		const plain = e.clipboardData.getData('text/plain');
+		document.execCommand('insertText', false, plain);
 	});
 
 	input_elem.addEventListener('keydown', e => {
@@ -3224,7 +3227,7 @@ window.api.onAgentToolComplete(info => {
 
 window.api.onAgentComplete(() => {
 	hideCancelButton();
-	
+
 	const finalParsed = parseThinkingAndContent(active_assistant_text);
 	console.log('AI Response:', {
 		raw: active_assistant_text,
@@ -3378,7 +3381,7 @@ function handleKeyShortcutSuggestions(query) {
 	const typedPrefix = lastPlusIndex === -1 ? '' : query.substring(0, lastPlusIndex + 1);
 	const currentKeyTyped = lastPlusIndex === -1 ? query : query.substring(lastPlusIndex + 1);
 
-	const available = ["ctrl", "shift", "alt", "super", "escape", "enter", "space", "tab", "backspace", "delete", "insert", "pageup", "pagedown", "home", "end", "up", "down", "left", "right"];
+	const available = ['ctrl', 'shift', 'alt', 'super', 'escape', 'enter', 'space', 'tab', 'backspace', 'delete', 'insert', 'pageup', 'pagedown', 'home', 'end', 'up', 'down', 'left', 'right'];
 	const matches = available.filter(k => k.startsWith(currentKeyTyped.toLowerCase()));
 
 	const suggestions = matches.map(m => {

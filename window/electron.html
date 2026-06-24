@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+		<meta name="theme-color" content="#191919" />
+		<title>Nono-Terminal</title>
+		<meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file:; style-src 'self' 'unsafe-inline' file: https://fonts.googleapis.com https://fonts.cdnfonts.com; font-src 'self' file: https://fonts.gstatic.com https://fonts.cdnfonts.com; img-src 'self' file: data: https:; connect-src 'self' ws: wss: http: https:;" />
+		<link rel="manifest" href="manifest.json" />
+		<link rel="apple-touch-icon" href="https://icons.ngwy.fr/maskable/code/c792ea/242424/512/512" />
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+		<link rel="stylesheet" href="style.css" />
+		<script src="prism.js" defer></script>
+		<script src="codejar.js" defer></script>
+		<script src="marked.min.js" defer></script>
+		<script src="window.js" defer></script>
+	</head>
+	<body>
+		<div id="screen-stream-container">
+			<div id="screen-stream-content-wrapper">
+				<div id="screen-stream-content">
+					<img id="screen-stream-bg" />
+					<video id="screen-stream-video" autoplay playsinline muted></video>
+					<div id="screen-stream-cursor"></div>
+				</div>
+			</div>
+		</div>
+		<terminal-chat class="mode-full" id="terminal-chat-container">
+			<!-- Dynamically appended chat history will go here -->
+
+			<chat-block from="user" id="active-chat-block">
+				<pre class="input chat-marker" contenteditable="true" id="active-input" spellcheck="false" autocapitalize="none" autocorrect="off"></pre>
+				<div class="slash-suggestions" id="slash-suggestions"></div>
+			</chat-block>
+		</terminal-chat>
+
+		<!-- Code Editor Overlay -->
+		<div id="editor-overlay" class="editor-overlay">
+			<div class="editor-header">
+				<div class="editor-title-area">
+					<span class="material-symbols-outlined editor-icon">edit_note</span>
+					<span id="editor-file-path" class="editor-file-path">file.txt</span>
+				</div>
+				<div class="editor-actions">
+					<button id="editor-btn-toggle-lines" class="btn-editor btn-toggle-lines">
+						<span class="material-symbols-outlined" style="font-size: 1.2em">format_list_numbered</span>
+						<span class="btn-text">Lines</span>
+					</button>
+					<button id="editor-btn-toggle-mode" class="btn-editor btn-toggle-mode">
+						<span class="material-symbols-outlined" id="editor-toggle-icon" style="font-size: 1.2em">difference</span>
+						<span id="editor-toggle-text" class="btn-text">Diff Mode</span>
+					</button>
+					<button id="editor-btn-save" class="btn-editor btn-save">
+						<span class="material-symbols-outlined" style="font-size: 1.2em">save</span>
+						<span class="btn-text">Save</span>
+					</button>
+					<button id="editor-btn-close" class="btn-editor btn-close">
+						<span class="material-symbols-outlined" style="font-size: 1.2em">close</span>
+						<span class="btn-text">Close</span>
+					</button>
+				</div>
+			</div>
+			<div class="editor-body">
+				<div id="editor-line-numbers" class="editor-line-numbers">1</div>
+				<div id="editor-code" class="editor-code language-javascript" spellcheck="false"></div>
+				<div id="editor-scrollbar-decorations" class="editor-scrollbar-decorations">
+					<div class="decorations-col modified"></div>
+					<div class="decorations-col added"></div>
+					<div class="decorations-col deleted"></div>
+				</div>
+			</div>
+		</div>
+
+		<!-- Mobile / QR Code Modal -->
+		<div id="mobile-overlay" class="mobile-overlay">
+			<div class="mobile-modal">
+				<div class="mobile-modal-header">
+					<span class="material-symbols-outlined mobile-modal-icon">qr_code_2</span>
+					<span class="mobile-modal-title">Mobile Terminal Connection</span>
+					<button id="mobile-btn-close" class="btn-mobile-close">
+						<span class="material-symbols-outlined">close</span>
+					</button>
+				</div>
+				<div class="mobile-modal-body">
+					<p>Scan this QR code with your mobile device to control this terminal window:</p>
+					<div class="qr-container">
+						<img id="qr-image" src="" alt="QR Code" />
+					</div>
+					<a id="qr-url" href="" target="_blank" class="qr-url">URL</a>
+				</div>
+			</div>
+		</div>
+
+		<!-- Git Diff Overlay -->
+		<div id="diff-overlay" class="diff-overlay">
+			<div class="diff-header">
+				<div class="diff-title-area">
+					<span class="material-symbols-outlined diff-icon">difference</span>
+					<span class="diff-title">Workspace Git Changes</span>
+				</div>
+				<div class="diff-actions">
+					<button id="diff-btn-refresh" class="btn-diff btn-refresh">
+						<span class="material-symbols-outlined" style="font-size: 1.2em">refresh</span>
+						<span class="btn-text">Refresh</span>
+					</button>
+					<button id="diff-btn-close" class="btn-diff btn-close">
+						<span class="material-symbols-outlined" style="font-size: 1.2em">close</span>
+						<span class="btn-text">Close</span>
+					</button>
+				</div>
+			</div>
+			<div id="diff-body" class="diff-body">
+				<!-- Rendered lists will go here -->
+			</div>
+		</div>
+
+		<!-- Connection Overlay (PWA/Mobile Connection Setup) -->
+		<div id="connection-overlay" class="diff-overlay">
+			<div class="diff-header">
+				<div class="diff-title-area">
+					<span class="material-symbols-outlined diff-icon">wifi_tethering</span>
+					<span class="diff-title">Connect to Nono-Terminal</span>
+				</div>
+				<div class="diff-actions">
+					<button id="conn-btn-refresh" class="btn-diff btn-refresh">
+						<span class="material-symbols-outlined" style="font-size: 1.25em">refresh</span>
+						<span class="btn-text">Rescan</span>
+					</button>
+				</div>
+			</div>
+			<div id="connection-body" class="diff-body">
+				<!-- Discovered sessions listed here -->
+			</div>
+		</div>
+
+	</body>
+</html>

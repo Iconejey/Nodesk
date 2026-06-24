@@ -1896,7 +1896,7 @@ async function runAgentLoop(session, prompt, usePro) {
 function toggleDebugMode(win) {
   const current_url = win.webContents.getURL();
   if (current_url.includes("example.html")) {
-    win.loadFile("window/index.html");
+    win.loadFile("window/electron.html");
   } else {
     win.loadFile("window/example.html");
   }
@@ -1964,7 +1964,7 @@ function createWindow(initial_cwd) {
     }
   });
 
-  win.loadFile("window/index.html");
+  win.loadFile("window/electron.html");
 
   win.webContents.once("did-finish-load", () => {
     const cwd = os.homedir();

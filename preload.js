@@ -51,6 +51,12 @@ contextBridge.exposeInMainWorld("api", {
   stageFile: (filePath) => ipcRenderer.invoke("git-stage-file", filePath),
   unstageFile: (filePath) => ipcRenderer.invoke("git-unstage-file", filePath),
   readFileDiff: (filePath) => ipcRenderer.invoke("read-file-diff", filePath),
+  gitFetch: () => ipcRenderer.invoke("git-fetch"),
+  gitPull: () => ipcRenderer.invoke("git-pull"),
+  gitPush: () => ipcRenderer.invoke("git-push"),
+  gitCommit: (message) => ipcRenderer.invoke("git-commit", message),
+  gitCommitHistory: () => ipcRenderer.invoke("git-commit-history"),
+  gitGenerateCommitMsg: () => ipcRenderer.invoke("git-generate-commit-msg"),
   getScreenSourceId: () => ipcRenderer.invoke("get-screen-source-id"),
   sendWebRtcSignalToMobile: (socketId, signal) =>
     ipcRenderer.send("webrtc-signal-to-mobile", socketId, signal),

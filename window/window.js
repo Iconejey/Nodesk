@@ -4136,7 +4136,23 @@ async function loadDiffOverlayContent(container) {
 
 	container.innerHTML = '';
 
-	// 1. Staged Section
+	// Create 2-column layout container
+	const bodyContainer = document.createElement('div');
+	bodyContainer.className = 'diff-body-container';
+
+	// Left column: Files list (Staged changes & unstaged changes)
+	const leftCol = document.createElement('div');
+	leftCol.className = 'diff-body-column';
+
+	// Right column: Operations, Commit Section, Commit History list
+	const rightCol = document.createElement('div');
+	rightCol.className = 'diff-body-column';
+
+	bodyContainer.appendChild(leftCol);
+	bodyContainer.appendChild(rightCol);
+	container.appendChild(bodyContainer);
+
+	// 1. Staged Changes Section
 	const stagedSection = document.createElement('div');
 	stagedSection.className = 'diff-section';
 	stagedSection.innerHTML = `<div class="diff-section-header">Staged Changes</div>`;
@@ -4181,7 +4197,7 @@ async function loadDiffOverlayContent(container) {
 		});
 	}
 	stagedSection.appendChild(stagedList);
-	container.appendChild(stagedSection);
+	leftCol.appendChild(stagedSection);
 
 	// 2. Changes Section
 	const unstagedSection = document.createElement('div');
@@ -4228,7 +4244,212 @@ async function loadDiffOverlayContent(container) {
 		});
 	}
 	unstagedSection.appendChild(unstagedList);
-	container.appendChild(unstagedSection);
+	leftCol.appendChild(unstagedSection);
+
+	// 3. Git Status Message Area
+	const statusMessage = document.createElement('div');
+	statusMessage.className = 'git-status-message';
+	rightCol.appendChild(statusMessage);
+
+	const showStatusMsg = (text, isError = false) => {
+		statusMessage.textContent = text;
+		statusMessage.className = 'git-status-message ' + (isError ? 'error' : 'success');
+		statusMessage.style.display = 'block';
+		setTimeout(() => {
+			statusMessage.style.display = 'none';
+		}, 8000);
+	};
+
+	// 4. Git Actions Section
+	const actionsSection = document.createElement('div');
+	actionsSection.className = 'diff-section';
+	actionsSection.innerHTML = `<div class="diff-section-header">Git Actions</div>`;
+	
+	const operationsBar = document.createElement('div');
+	operationsBar.className = 'diff-operations-bar';
+
+	const btnFetch = document.createElement('button');
+	btnFetch.className = 'btn-git-action';
+	btnFetch.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">download_done</span> Fetch`;
+	
+	const btnPull = document.createElement('button');
+	btnPull.className = 'btn-git-action';
+	btnPull.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">arrow_downward</span> Pull`;
+
+	const btnPush = document.createElement('button');
+	btnPush.className = 'btn-git-action';
+	btnPush.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">arrow_upward</span> Push`;
+
+	const setActionsLoading = (loading) => {
+		btnFetch.disabled = loading;
+		btnPull.disabled = loading;
+		btnPush.disabled = loading;
+	};
+
+	btnFetch.addEventListener('click', async () => {
+		setActionsLoading(true);
+		btnFetch.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.2em">sync</span> Fetching...`;
+		const res = await window.api.gitFetch();
+		setActionsLoading(false);
+		btnFetch.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">download_done</span> Fetch`;
+		if (res.error) {
+			showStatusMsg('Fetch failed: ' + res.error, true);
+		} else {
+			showStatusMsg('Fetch completed successfully.');
+			loadDiffOverlayContent(container);
+		}
+	});
+
+	btnPull.addEventListener('click', async () => {
+		setActionsLoading(true);
+		btnPull.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.2em">sync</span> Pulling...`;
+		const res = await window.api.gitPull();
+		setActionsLoading(false);
+		btnPull.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">arrow_downward</span> Pull`;
+		if (res.error) {
+			showStatusMsg('Pull failed: ' + res.error, true);
+		} else {
+			showStatusMsg('Pull completed successfully:\n' + (res.output || ''));
+			loadDiffOverlayContent(container);
+		}
+	});
+
+	btnPush.addEventListener('click', async () => {
+		setActionsLoading(true);
+		btnPush.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.2em">sync</span> Pushing...`;
+		const res = await window.api.gitPush();
+		setActionsLoading(false);
+		btnPush.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">arrow_upward</span> Push`;
+		if (res.error) {
+			showStatusMsg('Push failed: ' + res.error, true);
+		} else {
+			showStatusMsg('Push completed successfully:\n' + (res.output || ''));
+			loadDiffOverlayContent(container);
+		}
+	});
+
+	operationsBar.appendChild(btnFetch);
+	operationsBar.appendChild(btnPull);
+	operationsBar.appendChild(btnPush);
+	actionsSection.appendChild(operationsBar);
+	rightCol.appendChild(actionsSection);
+
+	// 5. Commit Changes Section
+	const commitSection = document.createElement('div');
+	commitSection.className = 'diff-section';
+	commitSection.innerHTML = `<div class="diff-section-header">Commit Changes</div>`;
+
+	const commitInputWrapper = document.createElement('div');
+	commitInputWrapper.className = 'commit-input-wrapper';
+
+	const commitInput = document.createElement('textarea');
+	commitInput.className = 'commit-msg-input';
+	commitInput.placeholder = 'Enter commit message...';
+	commitInput.rows = 1;
+
+	const btnMagic = document.createElement('button');
+	btnMagic.className = 'btn-magic';
+	btnMagic.title = 'Generate commit message with AI';
+	btnMagic.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.3em">magic_button</span>`;
+
+	btnMagic.addEventListener('click', async () => {
+		if (status.staged.length === 0) {
+			showStatusMsg('Stage some changes first to generate a commit message!', true);
+			return;
+		}
+		btnMagic.disabled = true;
+		btnMagic.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.3em">sync</span>`;
+		const res = await window.api.gitGenerateCommitMsg();
+		btnMagic.disabled = false;
+		btnMagic.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.3em">magic_button</span>`;
+		if (res.error) {
+			showStatusMsg('AI Generation failed: ' + res.error, true);
+		} else if (res.message) {
+			commitInput.value = res.message;
+			btnCommit.disabled = false;
+		}
+	});
+
+	commitInputWrapper.appendChild(commitInput);
+	commitInputWrapper.appendChild(btnMagic);
+	commitSection.appendChild(commitInputWrapper);
+
+	const btnCommit = document.createElement('button');
+	btnCommit.className = 'btn-commit-action';
+	btnCommit.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">check_circle</span> Commit Staged`;
+	btnCommit.disabled = status.staged.length === 0 || !commitInput.value.trim();
+
+	commitInput.addEventListener('input', () => {
+		btnCommit.disabled = status.staged.length === 0 || !commitInput.value.trim();
+	});
+
+	btnCommit.addEventListener('click', async () => {
+		const msg = commitInput.value.trim();
+		if (!msg) return;
+
+		btnCommit.disabled = true;
+		btnCommit.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.2em">sync</span> Committing...`;
+		const res = await window.api.gitCommit(msg);
+		btnCommit.disabled = false;
+		btnCommit.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.2em">check_circle</span> Commit Staged`;
+		
+		if (res.error) {
+			showStatusMsg('Commit failed: ' + res.error, true);
+		} else {
+			showStatusMsg('Committed successfully.');
+			commitInput.value = '';
+			loadDiffOverlayContent(container);
+		}
+	});
+
+	commitSection.appendChild(btnCommit);
+	rightCol.appendChild(commitSection);
+
+	// 6. Git Commits History Section
+	const historySection = document.createElement('div');
+	historySection.className = 'diff-section';
+	historySection.innerHTML = `<div class="diff-section-header">Commit History</div>`;
+	const historyList = document.createElement('div');
+	historyList.className = 'git-history-list';
+
+	historyList.innerHTML = `<div class="diff-empty-msg">Loading history...</div>`;
+	historySection.appendChild(historyList);
+	rightCol.appendChild(historySection);
+
+	window.api.gitCommitHistory().then(res => {
+		historyList.innerHTML = '';
+		if (res.error) {
+			historyList.innerHTML = `<div class="diff-empty-msg" style="color: var(--red);">Error loading history: ${res.error}</div>`;
+			return;
+		}
+		if (!res.commits || res.commits.length === 0) {
+			historyList.innerHTML = `<div class="diff-empty-msg">No commits found in history</div>`;
+			return;
+		}
+		res.commits.forEach(commit => {
+			const item = document.createElement('div');
+			item.className = 'git-history-item';
+
+			const row1 = document.createElement('div');
+			row1.className = 'git-history-row';
+			row1.innerHTML = `<span class="git-commit-hash">${commit.hash}</span><span class="git-commit-meta">${commit.date}</span>`;
+
+			const row2 = document.createElement('div');
+			row2.className = 'git-history-row';
+			row2.style.marginTop = '4px';
+			row2.innerHTML = `<span class="git-commit-msg" title="${commit.subject}">${commit.subject}</span>`;
+
+			const row3 = document.createElement('div');
+			row3.className = 'git-history-row';
+			row3.style.marginTop = '2px';
+			row3.innerHTML = `<span class="git-commit-meta" style="font-size: 0.75em;">by ${commit.author}</span>`;
+
+			item.appendChild(row1);
+			item.appendChild(row2);
+			item.appendChild(row3);
+			historyList.appendChild(item);
+		});
+	});
 }
 
 async function updateScrollbarDecorations() {

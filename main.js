@@ -3204,3 +3204,132 @@ ipcMain.handle('read-file-diff', async (event, filePath) => {
 		});
 	});
 });
+
+ipcMain.handle('git-fetch', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	return new Promise(resolve => {
+		exec('git fetch', { cwd: base }, (err, stdout, stderr) => {
+			if (err) resolve({ error: stderr || err.message });
+			else resolve({ success: true, output: stdout || stderr });
+		});
+	});
+});
+
+ipcMain.handle('git-pull', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	return new Promise(resolve => {
+		exec('git pull', { cwd: base }, (err, stdout, stderr) => {
+			if (err) resolve({ error: stderr || err.message });
+			else resolve({ success: true, output: stdout || stderr });
+		});
+	});
+});
+
+ipcMain.handle('git-push', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	return new Promise(resolve => {
+		exec('git push', { cwd: base }, (err, stdout, stderr) => {
+			if (err) resolve({ error: stderr || err.message });
+			else resolve({ success: true, output: stdout || stderr });
+		});
+	});
+});
+
+ipcMain.handle('git-commit', async (event, message) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	return new Promise(resolve => {
+		const { execFile } = require('child_process');
+		execFile('git', ['commit', '-m', message], { cwd: base }, (err, stdout, stderr) => {
+			if (err) resolve({ error: stderr || err.message });
+			else resolve({ success: true, output: stdout });
+		});
+	});
+});
+
+ipcMain.handle('git-commit-history', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	const base = data ? data.session.current_cwd : process.cwd();
+	return new Promise(resolve => {
+		exec('git log -n 10 --pretty=format:"%h|%s|%an|%ar"', { cwd: base }, (err, stdout, stderr) => {
+			if (err) {
+				resolve({ error: stderr || err.message });
+				return;
+			}
+			const commits = stdout.split('\n').filter(Boolean).map(line => {
+				const [hash, subject, author, date] = line.split('|');
+				return { hash, subject, author, date };
+			});
+			resolve({ commits });
+		});
+	});
+});
+
+ipcMain.handle('git-generate-commit-msg', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	if (!data) return { error: 'No active window session' };
+	const base = data.session.current_cwd;
+
+	return new Promise(resolve => {
+		exec('git diff --cached', { cwd: base }, async (err, stdout, stderr) => {
+			if (err) {
+				resolve({ error: stderr || err.message });
+				return;
+			}
+			const diff = stdout.trim();
+			if (!diff) {
+				resolve({ error: 'No staged changes to generate a commit message for.' });
+				return;
+			}
+
+			try {
+				const config = loadConfig();
+				if (!config.api_key) {
+					resolve({ error: 'API key is not configured.' });
+					return;
+				}
+
+				const { OpenAI } = require('openai');
+				const openai = new OpenAI({
+					apiKey: config.api_key,
+					baseURL: getProviderBaseUrl('gemini')
+				});
+
+				const model_name = config.flash_model || 'gemini-3.5-flash';
+				const maxDiffLength = 20000;
+				const diffToUse = diff.length > maxDiffLength ? diff.substring(0, maxDiffLength) + '\n... [truncated due to length]' : diff;
+
+				const prompt = `You are a helper that generates a concise, professional git commit message based on the staged git diff below.
+Respond with ONLY the commit message (a single line, max 72 characters, starting with an appropriate conventional commit prefix like feat:, fix:, chore:, docs:, refactor:, test:, style:, etc.).
+Do not wrap the message in quotes, markdown code blocks, or include any preamble or extra text.
+
+DIFF:
+${diffToUse}`;
+
+				const response = await openai.chat.completions.create({
+					model: model_name,
+					messages: [
+						{ role: 'user', content: prompt }
+					]
+				});
+
+				const message = response.choices[0]?.message?.content?.trim();
+				if (!message) {
+					resolve({ error: 'Empty response from AI.' });
+				} else {
+					let cleanMsg = message.replace(/^[`"']|[`"']$/g, '').trim();
+					if (cleanMsg.startsWith('```')) {
+						cleanMsg = cleanMsg.replace(/^```[a-zA-Z]*\n/, '').replace(/\n```$/, '').trim();
+					}
+					resolve({ success: true, message: cleanMsg });
+				}
+			} catch (aiErr) {
+				resolve({ error: aiErr.message });
+			}
+		});
+	});
+});
+

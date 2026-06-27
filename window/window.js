@@ -3420,6 +3420,16 @@ window.api.onFingerprintPrompt(info => {
 			window.scrollTo(0, document.body.scrollHeight);
 		}
 	}
+
+	// If running on mobile (PWA browser), pop up a dialog to resolve the sudo prompt remotely
+	if (is_mobile) {
+		setTimeout(() => {
+			const password = prompt('Nono-Terminal: Sudo Password Required');
+			if (password !== null && password !== '') {
+				window.api.sendSudoPassword(password);
+			}
+		}, 150);
+	}
 });
 
 // Interactive File Explorer & Code Editor Helpers

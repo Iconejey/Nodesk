@@ -436,6 +436,13 @@ function startMobileServer() {
 			}
 		});
 
+		socket.on('sudo-password', ({ windowId, password }) => {
+			const data = getWindowData(windowId);
+			if (data) {
+				data.session.shell_proc.stdin.write(password + '\n');
+			}
+		});
+
 		socket.on('request-state', async ({ windowId }) => {
 			const data = getWindowData(windowId);
 			if (data) {
@@ -2844,6 +2851,14 @@ ipcMain.on('request-state', event => {
 ipcMain.on('agent-user-answer', (event, answer) => {
 	// Emit with the sender's webContentsId so the specific loop's listener picks it up
 	ipcMain.emit(`agent-user-answer-${event.sender.id}`, event, { answer });
+});
+
+// Handle incoming sudo passwords from the Electron window
+ipcMain.on('sudo-password', (event, password) => {
+	const data = active_windows.get(event.sender.id);
+	if (data) {
+		data.session.shell_proc.stdin.write(password + '\n');
+	}
 });
 
 ipcMain.handle('get-screen-source-id', async () => {

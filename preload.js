@@ -81,4 +81,6 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("agent-plan-mode", (event, info) => callback(info)),
   onFingerprintPrompt: (callback) =>
     ipcRenderer.on("fingerprint-prompt", (event, info) => callback(info)),
+  sendSudoPassword: (password) =>
+    ipcRenderer.send("sudo-password", password),
 });

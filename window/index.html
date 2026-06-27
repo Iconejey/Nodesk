@@ -94,6 +94,26 @@
 						onHideQrCode: callback => registerSocketListener('hide-qrcode', callback),
 						onShellCommandStart: callback => registerSocketListener('shell-command-start', callback),
 						onAgentPromptStart: callback => registerSocketListener('agent-prompt-start', callback),
+						onAgentAskUser: callback => registerSocketListener('agent-ask-user', callback),
+						onAgentTodoUpdate: callback => registerSocketListener('agent-todo-update', callback),
+						onAgentPlanMode: callback => registerSocketListener('agent-plan-mode', callback),
+						onFingerprintPrompt: callback => registerSocketListener('fingerprint-prompt', callback),
+						sendAgentUserAnswer: answer => {
+							if (currentSocket) {
+								currentSocket.emit('agent-user-answer', {
+									windowId: window.api.windowId,
+									answer
+								});
+							}
+						},
+						sendSudoPassword: password => {
+							if (currentSocket) {
+								currentSocket.emit('sudo-password', {
+									windowId: window.api.windowId,
+									password
+								});
+							}
+						},
 
 						executeSlashCommand: command => {
 							if (currentSocket) {

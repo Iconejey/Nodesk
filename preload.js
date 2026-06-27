@@ -71,4 +71,12 @@ contextBridge.exposeInMainWorld("api", {
   injectKeyShortcut: (shortcut) => ipcRenderer.send("inject-key-shortcut", shortcut),
   sendScreenBg: (socketId, jpegData) =>
     ipcRenderer.send("send-screen-bg", socketId, jpegData),
+  onAgentAskUser: (callback) =>
+    ipcRenderer.on("agent-ask-user", (event, info) => callback(info)),
+  sendAgentUserAnswer: (answer) =>
+    ipcRenderer.send("agent-user-answer", answer),
+  onAgentTodoUpdate: (callback) =>
+    ipcRenderer.on("agent-todo-update", (event, info) => callback(info)),
+  onAgentPlanMode: (callback) =>
+    ipcRenderer.on("agent-plan-mode", (event, info) => callback(info)),
 });

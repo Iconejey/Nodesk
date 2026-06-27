@@ -1705,16 +1705,38 @@ function computeLineDiff(old_lines, new_lines) {
 	return diff.join('\n');
 }
 
-// System prompt builder
-function getSystemPrompt(cwd) {
+// System prompt builder — accepts session to inject live state as a semantic anchor
+function getSystemPrompt(cwd, session) {
 	const os_platform = process.platform;
 	const shell_type = os_platform === 'win32' ? 'cmd/powershell' : 'bash';
+
+	let plan_mode_section = '';
+	if (session && session.plan_mode) {
+		plan_mode_section = `
+⚠️  PLAN MODE IS ACTIVE. You are currently in read-only planning mode.
+- write_to_file, replace_in_file, and execute_command with side effects are DISABLED.
+- Focus on exploration and producing a clear todo_write plan.
+- Call exit_plan_mode({confirm_ready: true}) when the user approves your plan.`;
+	}
+
+	let todo_section = '';
+	if (session && session.todo_list && session.todo_list.length > 0) {
+		const task_lines = session.todo_list.map(t => {
+			const icon = t.status === 'completed' ? '✅' : t.status === 'in_progress' ? '🔄' : '⬜';
+			return `  ${icon} [${t.id}] ${t.content} (${t.status})`;
+		}).join('\n');
+		todo_section = `
+
+Current Task List (your semantic anchor — update with todo_write as you progress):
+${task_lines}`;
+	}
+
 	return `You are Nono-Terminal, a powerful AI terminal assistant.
 You have direct access to a persistent terminal shell and files in the workspace.
 Current Environment:
 - Operating System: ${os_platform}
 - Target Shell: ${shell_type}
-- Current Working Directory: ${cwd}
+- Current Working Directory: ${cwd}${plan_mode_section}${todo_section}
 
 Rules:
 1. Wrap your internal reasoning/thinking process inside <thinking>...</thinking> tags before calling any tool or producing any response. Before declaring a tool call, validate that you have ALL required parameters. If a required parameter is missing (e.g. the exact path of a file to modify), you MUST stop and use ask_user_question instead of guessing.
@@ -1724,6 +1746,20 @@ Rules:
 5. Be concise and act like a senior developer assistant. Do not explain things unless asked. Do not end responses with open-ended offers for further assistance if the requested work is complete.
 6. You can create clickable links to files in your responses using the markdown link syntax [file_name](file:file_path) (e.g. [main.js](file:main.js) or [style.css](file:window/style.css)). Prefer doing this when referencing files in the workspace.
 7. For tasks requiring more than three distinct steps, you MUST start by calling todo_write to make your resolution strategy visible to the user.`;
+}
+
+// Async helper: gather a compact git context snapshot for the active context injection
+async function getGitContext(cwd) {
+	const run = cmd => new Promise(resolve => {
+		exec(cmd, { cwd }, (err, stdout) => resolve(err ? '' : stdout.trim()));
+	});
+	const [branch, status] = await Promise.all([
+		run('git rev-parse --abbrev-ref HEAD'),
+		run('git status --short')
+	]);
+	if (!branch) return null;
+	const changed_count = status ? status.split('\n').filter(Boolean).length : 0;
+	return { branch, changed_count, status_summary: status.substring(0, 400) };
 }
 
 // OpenAI call timeout/retry wrapper
@@ -2176,8 +2212,23 @@ async function runAgentLoop(session, prompt, usePro) {
 		session.messages = [];
 	}
 
-	session.messages.push({ role: 'user', content: prompt });
+	// #1 — Wrap user prompt in <task> XML to prevent prompt injection and
+	// clearly separate user intent from environment data in the context window.
+	const wrapped_prompt = `<task>\n${prompt}\n</task>`;
+	session.messages.push({ role: 'user', content: wrapped_prompt });
 	truncateOldReadFiles(session.messages);
+
+	// #5 (Active Context) — Gather a git snapshot once per invocation and
+	// inject it as a lightweight context block in the first user message.
+	const git_ctx = await getGitContext(session.current_cwd);
+	if (git_ctx) {
+		const ctx_text = `\n\n<active_context>\nGit branch: ${git_ctx.branch} | Changed files: ${git_ctx.changed_count}${git_ctx.changed_count > 0 ? `\n${git_ctx.status_summary}` : ''}\n</active_context>`;
+		// Append to the last user message so it doesn't bloat tool results
+		const last_user = session.messages[session.messages.length - 1];
+		if (last_user && last_user.role === 'user') {
+			last_user.content += ctx_text;
+		}
+	}
 
 	let consecutive_errors = 0;
 
@@ -2192,9 +2243,11 @@ async function runAgentLoop(session, prompt, usePro) {
 		while (loop_count < max_loops) {
 			loop_count++;
 
+			// #2 (Todo reinjection) — Rebuild the system message every turn so the
+			// current task list and plan_mode state are always the semantic anchor.
 			const system_msg = {
 				role: 'system',
-				content: getSystemPrompt(session.current_cwd)
+				content: getSystemPrompt(session.current_cwd, session)
 			};
 			if (session.messages.length > 0 && session.messages[0].role === 'system') {
 				session.messages[0] = system_msg;
@@ -2278,7 +2331,14 @@ async function runAgentLoop(session, prompt, usePro) {
 				let is_error = false;
 
 				try {
-					if (name === 'read_file') {
+					// #3 — Plan mode enforcement: block any write/execute tool when plan_mode is active
+					const WRITE_TOOLS = ['write_to_file', 'replace_in_file', 'execute_command'];
+					if (session.plan_mode && WRITE_TOOLS.includes(name)) {
+						tool_result = JSON.stringify({
+							error: `Tool '${name}' is disabled in plan mode. Finish your plan with todo_write, present it to the user, then call exit_plan_mode({confirm_ready: true}) to proceed.`
+						});
+						is_error = true;
+					} else if (name === 'read_file') {
 						const res = readFile(path.resolve(session.current_cwd, args.path), args.start_line, args.end_line);
 						if (res.error) is_error = true;
 						tool_result = JSON.stringify(res);
@@ -2348,28 +2408,26 @@ async function runAgentLoop(session, prompt, usePro) {
 						web_contents.send('agent-todo-update', { tasks: args.tasks });
 						tool_result = JSON.stringify({ success: true, tasks: args.tasks });
 					} else if (name === 'spawn_subagent') {
-						// Subagent is simulated — run a focused nested agent loop with a condensed context
-						const sub_prompt = `[Subagent: ${args.agent_type}]\n${args.instruction}`;
-						tool_result = JSON.stringify({
-							status: 'subagent_dispatched',
-							agent_type: args.agent_type,
-							note: 'Subagent execution is delegated. Check the instruction result in the next turn.',
-							instruction_summary: args.instruction.substring(0, 200)
-						});
+						// #5 — Real subagent decomposition: spin up an isolated agent loop
+						// with a fresh message history and tool set restricted by agent_type.
+						sendStatus(`Spawning ${args.agent_type} subagent...`);
+						const sub_result = await runSubagent(session, args.agent_type, args.instruction, config);
+						tool_result = JSON.stringify(sub_result);
+						if (sub_result.error) is_error = true;
 					} else if (name === 'ask_user_question') {
-						// Pause agent and forward question to the UI
+						// #6 — Pause agent and forward question to the UI; wait for ipcMain reply
 						web_contents.send('agent-ask-user', {
 							question: args.question,
 							options: args.options || [],
 							multi_select: args.multi_select || false
 						});
-						// Wait for the user's answer via a promise that resolves when the UI responds
+						sendStatus('Waiting for user answer...');
 						const answer = await new Promise(resolve => {
-							const handler = (event, { answer }) => resolve(answer);
-							// The IPC handler will be set up outside; for now we resolve immediately
-							// with a placeholder to avoid blocking the agent loop indefinitely.
-							// A real implementation would use ipcMain.once("agent-user-answer", handler).
-							resolve('[User response pending — agent paused for user input]');
+							const timeout_id = setTimeout(() => resolve('[No answer received — continuing]'), 5 * 60 * 1000);
+							ipcMain.once(`agent-user-answer-${session.webContentsId}`, (event, data) => {
+								clearTimeout(timeout_id);
+								resolve(data.answer || '');
+							});
 						});
 						tool_result = JSON.stringify({ answer });
 					} else if (name === 'enter_plan_mode') {
@@ -2452,6 +2510,106 @@ async function runAgentLoop(session, prompt, usePro) {
 		web_contents.send('agent-chunk', { text: `\n\n**Error:** ${err.message}` });
 	} finally {
 		web_contents.send('agent-complete');
+	}
+}
+
+// #6 — Real subagent decomposition
+// Runs an isolated agent loop with a fresh context and a restricted tool set.
+// - "explore" agents: read-only tools only (read_file, list_files, search_files, list_code_definition_names, workspace_changed_files, file_changes)
+// - "task" / "plan" agents: full tool access
+// Returns a condensed summary string back to the orchestrator.
+async function runSubagent(parent_session, agent_type, instruction, config) {
+	const EXPLORE_TOOLS = ['read_file', 'list_files', 'search_files', 'list_code_definition_names', 'workspace_changed_files', 'file_changes'];
+	const allowed_tools = agent_type === 'explore'
+		? tools_definition.filter(t => EXPLORE_TOOLS.includes(t.function.name))
+		: tools_definition;
+
+	const sub_messages = [
+		{
+			role: 'system',
+			content: `You are a focused ${agent_type} subagent of Nono-Terminal running in an isolated context.
+Your sole mission: ${instruction}
+Current Working Directory: ${parent_session.current_cwd}
+When your task is complete, output ONLY a concise summary (max 800 tokens) of your findings or results — no preamble, no pleasantries.`
+		},
+		{ role: 'user', content: `<task>\n${instruction}\n</task>` }
+	];
+
+	const model_name = config.flash_model;
+	const openai = new OpenAI({ apiKey: config.api_key, baseURL: getProviderBaseUrl('gemini') });
+
+	// Fake session object with the parent's shell and cwd, but an isolated message history
+	const sub_session = {
+		current_cwd: parent_session.current_cwd,
+		webContentsId: parent_session.webContentsId,
+		writeCommand: parent_session.writeCommand.bind(parent_session),
+		messages: sub_messages,
+		plan_mode: false,
+		todo_list: null
+	};
+
+	let sub_loops = 0;
+	const max_sub_loops = 10;
+	let final_summary = '';
+
+	try {
+		while (sub_loops < max_sub_loops) {
+			sub_loops++;
+			const response = await callOpenAiWithRetry(
+				signal => openai.chat.completions.create({ model: model_name, messages: sub_session.messages, tools: allowed_tools }, { signal }),
+				2
+			);
+			const choice = response.choices[0];
+			const message = choice.message;
+			sub_session.messages.push(message);
+
+			if (!message.tool_calls || message.tool_calls.length === 0) {
+				final_summary = (message.content || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+				break;
+			}
+
+			for (const tool_call of message.tool_calls) {
+				const name = tool_call.function.name;
+				const args = JSON.parse(tool_call.function.arguments);
+				let tool_result;
+				try {
+					if (name === 'read_file') {
+						tool_result = JSON.stringify(readFile(path.resolve(sub_session.current_cwd, args.path), args.start_line, args.end_line));
+					} else if (name === 'list_files') {
+						tool_result = JSON.stringify(listFiles(path.resolve(sub_session.current_cwd, args.path || '.'), args.recursive || false));
+					} else if (name === 'search_files') {
+						tool_result = JSON.stringify(await searchFiles(path.resolve(sub_session.current_cwd, args.path || '.'), args.regex, args.file_pattern));
+					} else if (name === 'list_code_definition_names') {
+						tool_result = JSON.stringify(listCodeDefinitionNames(path.resolve(sub_session.current_cwd, args.path || '.')));
+					} else if (name === 'workspace_changed_files') {
+						tool_result = JSON.stringify(await workspaceChangedFiles(sub_session.current_cwd));
+					} else if (name === 'file_changes') {
+						tool_result = JSON.stringify(await fileChanges(args.path, sub_session.current_cwd));
+					} else if (!EXPLORE_TOOLS.includes(name) && agent_type !== 'explore') {
+						// Full tool set for task/plan subagents — reuse parent dispatch helpers
+						if (name === 'execute_command') {
+							tool_result = await new Promise(resolve => {
+								sub_session.writeCommand(args.command, info => resolve(JSON.stringify({ exit_code: info.exit_code, cwd: info.cwd })));
+							});
+						} else if (name === 'write_to_file') {
+							tool_result = JSON.stringify(writeToFile(path.resolve(sub_session.current_cwd, args.path), args.content));
+						} else if (name === 'replace_in_file') {
+							tool_result = JSON.stringify(replaceInFile(path.resolve(sub_session.current_cwd, args.path), args.diff));
+						} else {
+							tool_result = JSON.stringify({ error: `Tool '${name}' not available in subagent` });
+						}
+					} else {
+						tool_result = JSON.stringify({ error: `Tool '${name}' not available in explore subagent` });
+					}
+				} catch (err) {
+					tool_result = JSON.stringify({ error: err.message });
+				}
+				sub_session.messages.push({ role: 'tool', tool_call_id: tool_call.id, name, content: tool_result });
+			}
+		}
+		return { summary: final_summary || 'Subagent completed without producing a summary.', loops: sub_loops };
+	} catch (err) {
+		return { error: err.message };
 	}
 }
 
@@ -2618,6 +2776,12 @@ ipcMain.on('request-state', event => {
 			homeDir: os.homedir()
 		});
 	}
+});
+
+// Forward the renderer's answer for ask_user_question back to the waiting agent loop
+ipcMain.on('agent-user-answer', (event, answer) => {
+	// Emit with the sender's webContentsId so the specific loop's listener picks it up
+	ipcMain.emit(`agent-user-answer-${event.sender.id}`, event, { answer });
 });
 
 ipcMain.handle('get-screen-source-id', async () => {

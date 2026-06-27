@@ -11,6 +11,8 @@ if (process.platform === 'linux') {
 	app.commandLine.appendSwitch('ozone-platform', 'wayland');
 	app.commandLine.appendSwitch('disable-features', 'ZeroCopyVideoCapture,UseChromeOSDirectVideoDecoder,WebRTCPipeWireUseDmabuf,WebRtcHideLocalIpsWithMdns');
 }
+// Disable autoplay restrictions for Web Audio/HTML5 Audio
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 const { spawn, exec } = require('child_process');
 const fs = require('fs');
@@ -953,6 +955,17 @@ async function executeSlashCommandForWindow(windowId, command_str) {
 				cwd: data.session.current_cwd
 			});
 		}
+	} else if (command_name === '/test-sound') {
+		sendToWindow(windowId, 'agent-ask-user', { question: 'Testing Question Chime...', options: [] });
+		sendToWindow(windowId, 'fingerprint-prompt', { type: 'fingerprint' });
+		sendToWindow(windowId, 'shell-output', {
+			text: "Triggered test chimes for both Agent Question and Fingerprint auth!\n",
+			is_stderr: false
+		});
+		sendToWindow(windowId, 'shell-complete', {
+			exit_code: 0,
+			cwd: data.session.current_cwd
+		});
 	} else if (command_name === '/update') {
 		try {
 			data.win.webContents
@@ -1153,6 +1166,23 @@ class ShellSession {
 	}
 
 	handleOutput(data, is_stderr) {
+		const lowerData = data.toLowerCase();
+		const isFingerprint = lowerData.includes('finger') || 
+		                      lowerData.includes('fprint') || 
+		                      lowerData.includes('doigt') ||       // French
+		                      lowerData.includes('dedo') ||        // Spanish/Portuguese
+		                      lowerData.includes('empreinte') ||   // French
+		                      lowerData.includes('huella');        // Spanish
+		const isSudoOrAuth = lowerData.includes('password') ||
+		                     lowerData.includes('passphrase') ||
+		                     lowerData.includes('mot de passe') || // French
+		                     lowerData.includes('contraseña') ||   // Spanish
+		                     lowerData.includes('passwort');       // German
+		
+		if (isFingerprint || isSudoOrAuth) {
+			sendToWindow(this.webContentsId, 'fingerprint-prompt', { type: isFingerprint ? 'fingerprint' : 'password' });
+		}
+
 		const buffer_name = is_stderr ? 'stderr_buffer' : 'stdout_buffer';
 		this[buffer_name] += data;
 
@@ -2719,12 +2749,44 @@ if (!got_the_lock) {
 	});
 }
 
+function startDbusMonitor() {
+	if (process.platform !== 'linux') return;
+
+	try {
+		const monitor = spawn('dbus-monitor', ['--system', 'sender=net.reactivated.Fprint']);
+
+		monitor.stdout.on('data', data => {
+			const output = data.toString();
+			if (output.includes('VerifyFingerSelected')) {
+				console.log('[DBus] Fingerprint verification started!');
+				for (const windowId of active_windows.keys()) {
+					sendToWindow(windowId, 'fingerprint-prompt', { type: 'fingerprint' });
+				}
+			}
+		});
+
+		monitor.on('error', err => {
+			console.warn('Failed to start dbus-monitor:', err.message);
+		});
+
+		monitor.on('close', code => {
+			console.log('dbus-monitor exited with code:', code);
+			if (code !== 0) {
+				setTimeout(startDbusMonitor, 5000);
+			}
+		});
+	} catch (e) {
+		console.error('Failed to initialize DBus monitor:', e);
+	}
+}
+
 // App event listeners
 app.whenReady().then(() => {
 	createWindow();
 	startMobileServer().catch(err => {
 		console.error('Failed to start mobile server on startup:', err);
 	});
+	startDbusMonitor();
 });
 
 app.on('window-all-closed', () => {

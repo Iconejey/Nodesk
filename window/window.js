@@ -352,6 +352,10 @@ const slash_commands = [
 		description: 'Simulate AI responding with markdown-debug-example.md content to test/debug markdown styling'
 	},
 	{
+		name: '/test-sound',
+		description: 'Trigger diagnostic chime test for questions & fingerprint auth'
+	},
+	{
 		name: '/update',
 		description: 'Erase cache storage and refresh the app'
 	}
@@ -3322,6 +3326,84 @@ window.api.onAgentComplete(() => {
 	current_thinking_block = null;
 
 	appendNewPromptBlock();
+});
+
+// Plays a soft two-tone chime using the Web Audio API — no sound file required.
+function playQuestionChime() {
+	try {
+		const ctx = new (window.AudioContext || window.webkitAudioContext)();
+		if (ctx.state === 'suspended') {
+			ctx.resume().catch(err => console.warn('Failed to resume AudioContext:', err));
+		}
+
+		function playTone(freq, startTime, duration, gain = 0.18) {
+			const osc = ctx.createOscillator();
+			const env = ctx.createGain();
+			osc.connect(env);
+			env.connect(ctx.destination);
+			osc.type = 'sine';
+			osc.frequency.setValueAtTime(freq, startTime);
+			env.gain.setValueAtTime(0, startTime);
+			env.gain.linearRampToValueAtTime(gain, startTime + 0.02);
+			env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+			osc.start(startTime);
+			osc.stop(startTime + duration);
+		}
+
+		const now = ctx.currentTime;
+		playTone(880, now, 0.35);        // A5 — first note
+		playTone(1318.5, now + 0.18, 0.45); // E6 — second note (major 6th up)
+
+		// Close context after the sound finishes to avoid resource leaks
+		setTimeout(() => ctx.close(), 800);
+	} catch (e) {
+		console.error('Web Audio playQuestionChime failed:', e);
+	}
+}
+
+window.api.onAgentAskUser(info => {
+	// Play chime to alert the user that input is required
+	playQuestionChime();
+	console.log('[Agent] Asking user:', info.question, info.options);
+});
+
+// Plays a triple rising sweep chime for fingerprint authentication / credential request.
+function playFingerprintChime() {
+	try {
+		const ctx = new (window.AudioContext || window.webkitAudioContext)();
+		if (ctx.state === 'suspended') {
+			ctx.resume().catch(err => console.warn('Failed to resume AudioContext:', err));
+		}
+
+		function playTone(freq, startTime, duration, type = 'sine', gain = 0.15) {
+			const osc = ctx.createOscillator();
+			const env = ctx.createGain();
+			osc.connect(env);
+			env.connect(ctx.destination);
+			osc.type = type;
+			osc.frequency.setValueAtTime(freq, startTime);
+			env.gain.setValueAtTime(0, startTime);
+			env.gain.linearRampToValueAtTime(gain, startTime + 0.01);
+			env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+			osc.start(startTime);
+			osc.stop(startTime + duration);
+		}
+
+		const now = ctx.currentTime;
+		// A fast three-tone scan sound
+		playTone(587.33, now, 0.1, 'triangle', 0.12);       // D5
+		playTone(783.99, now + 0.08, 0.1, 'triangle', 0.12); // G5
+		playTone(987.77, now + 0.16, 0.25, 'sine', 0.15);    // B5
+
+		setTimeout(() => ctx.close(), 600);
+	} catch (e) {
+		console.error('Web Audio playFingerprintChime failed:', e);
+	}
+}
+
+window.api.onFingerprintPrompt(info => {
+	playFingerprintChime();
+	console.log('[System] Auth/Fingerprint prompt detected:', info.type);
 });
 
 // Interactive File Explorer & Code Editor Helpers

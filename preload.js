@@ -79,4 +79,6 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("agent-todo-update", (event, info) => callback(info)),
   onAgentPlanMode: (callback) =>
     ipcRenderer.on("agent-plan-mode", (event, info) => callback(info)),
+  onFingerprintPrompt: (callback) =>
+    ipcRenderer.on("fingerprint-prompt", (event, info) => callback(info)),
 });

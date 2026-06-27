@@ -826,6 +826,57 @@ async function executeSlashCommandForWindow(windowId, command_str) {
 
 	if (command_name === '/exit') {
 		data.win.close();
+	} else if (command_name === '/context') {
+		try {
+			const messages = [...(data.session.messages || [])];
+			const system_msg = {
+				role: 'system',
+				content: getSystemPrompt(data.session.current_cwd, data.session)
+			};
+			if (messages.length > 0 && messages[0].role === 'system') {
+				messages[0] = system_msg;
+			} else {
+				messages.unshift(system_msg);
+			}
+
+			const tokenEstimate = estimateTokensForMessages(messages);
+			const maxTokens = getModelMaxTokens(data.session.model);
+			const formatNum = num => num.toLocaleString();
+
+			let outputText = `Context Window: ${formatNum(tokenEstimate)} / ${formatNum(maxTokens)} tokens\n\n`;
+
+			for (const msg of messages) {
+				const roleUpper = msg.role ? msg.role.toUpperCase() : 'UNKNOWN';
+				outputText += `=== ${roleUpper} ===\n`;
+				if (msg.content) {
+					outputText += `${msg.content}\n`;
+				}
+				if (msg.tool_calls && msg.tool_calls.length > 0) {
+					for (const tc of msg.tool_calls) {
+						outputText += `Tool Call: ${tc.function?.name || tc.name || ''}\nArguments: ${tc.function?.arguments || tc.arguments || ''}\n`;
+					}
+				}
+				outputText += `\n`;
+			}
+
+			sendToWindow(windowId, 'shell-output', {
+				text: outputText,
+				is_stderr: false
+			});
+			sendToWindow(windowId, 'shell-complete', {
+				exit_code: 0,
+				cwd: data.session.current_cwd
+			});
+		} catch (err) {
+			sendToWindow(windowId, 'shell-output', {
+				text: `Error fetching context: ${err.message}\n`,
+				is_stderr: true
+			});
+			sendToWindow(windowId, 'shell-complete', {
+				exit_code: 1,
+				cwd: data.session.current_cwd
+			});
+		}
 	} else if (command_name === '/clear') {
 		if (data.session.messages) {
 			data.session.messages = [];
@@ -2961,6 +3012,47 @@ ipcMain.handle('unpin-dir', async (event, dir_path) => {
 		return { success: true, pinned_dirs };
 	}
 	return { success: false, error: 'Directory not found in pinned list' };
+});
+
+function estimateTokensForMessages(messages) {
+	let totalLength = 0;
+	for (const msg of messages) {
+		if (msg.content) {
+			totalLength += msg.content.length;
+		}
+		if (msg.tool_calls) {
+			totalLength += JSON.stringify(msg.tool_calls).length;
+		}
+	}
+	return Math.ceil(totalLength / 4.0);
+}
+
+ipcMain.handle('get-context-info', async (event) => {
+	const data = active_windows.get(event.sender.id);
+	if (!data) return { error: 'No active window session' };
+
+	const session = data.session;
+	const messages = [...(session.messages || [])];
+
+	// Prepare the system prompt
+	const system_msg = {
+		role: 'system',
+		content: getSystemPrompt(session.current_cwd, session)
+	};
+	if (messages.length > 0 && messages[0].role === 'system') {
+		messages[0] = system_msg;
+	} else {
+		messages.unshift(system_msg);
+	}
+
+	const tokenEstimate = estimateTokensForMessages(messages);
+	const maxTokens = getModelMaxTokens(session.model);
+
+	return {
+		messages: messages,
+		tokenCount: tokenEstimate,
+		maxTokens: maxTokens
+	};
 });
 
 ipcMain.handle('read-file-content', async (event, file_path) => {

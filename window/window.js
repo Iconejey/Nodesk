@@ -316,10 +316,8 @@ if (window.Prism && !window.Prism.languages.diff) {
 const slash_commands = [
 	{ name: '/clear', description: 'Clear terminal screen history' },
 	{ name: '/code', description: 'Open file in VS Code' },
-	{
-		name: '/changes',
-		description: 'Show Git changed files categorized by staged/unstaged status'
-	},
+	{ name: '/changes', description: 'Show Git changed files categorized by staged/unstaged status' },
+	{ name: '/context', description: 'View the current context window size and contents' },
 	{ name: '/exit', description: 'Close current window' },
 	{ name: '/fullscreen', description: 'Toggle fullscreen mode for the window' },
 	{ name: '/help', description: 'Show list of available commands' },
@@ -1146,13 +1144,26 @@ function submitInput(text, usePro = false) {
 	}
 
 	hideSuggestions();
-	command_history.push(text);
+
+	const firstWord = trimmed.split(/\s+/)[0];
+	const isEphemeral = ['/context', '/fullscreen', '/screen'].includes(firstWord);
+
+	if (!isEphemeral) {
+		command_history.push(text);
+	}
 	history_index = -1;
 
-	// Make input static
-	const input_elem = document.getElementById('active-input');
-	if (input_elem) {
-		input_elem.removeAttribute('contenteditable');
+	// Remove active-chat-block if ephemeral, otherwise make input static
+	if (isEphemeral) {
+		const old_chat_block = document.getElementById('active-chat-block');
+		if (old_chat_block) {
+			old_chat_block.remove();
+		}
+	} else {
+		const input_elem = document.getElementById('active-input');
+		if (input_elem) {
+			input_elem.removeAttribute('contenteditable');
+		}
 	}
 
 	// Handle slash commands
@@ -1314,41 +1325,44 @@ function submitInput(text, usePro = false) {
 			return;
 		} else if (trimmed.startsWith('/fullscreen')) {
 			if (is_mobile) {
-				const container = document.getElementById('terminal-chat-container');
-				const active_block = document.getElementById('active-chat-block');
-				const out_pre = document.createElement('pre');
-				out_pre.className = 'output';
-
+				let statusText = '';
 				if (!document.fullscreenElement && !document.webkitFullscreenElement) {
 					const enterFS = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen || document.documentElement.msRequestFullscreen;
 					if (enterFS) {
 						enterFS.call(document.documentElement);
-						out_pre.textContent = 'Mobile view is now fullscreen.';
+						statusText = 'Mobile view is now fullscreen.';
 					} else {
-						out_pre.textContent = 'Fullscreen is not supported on this mobile device/browser.';
+						statusText = 'Fullscreen is not supported on this mobile device/browser.';
 					}
 				} else {
 					const exitFS = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
 					if (exitFS) {
 						exitFS.call(document);
-						out_pre.textContent = 'Mobile view is now windowed.';
+						statusText = 'Mobile view is now windowed.';
 					} else {
-						out_pre.textContent = 'Failed to exit fullscreen.';
+						statusText = 'Failed to exit fullscreen.';
 					}
 				}
-				active_block.appendChild(out_pre);
+				appendTerminalSystemMessage(statusText);
 				appendNewPromptBlock(current_cwd);
+				return;
+			} else {
+				const container = document.getElementById('terminal-chat-container');
+				const chatBlock = document.createElement('chat-block');
+				chatBlock.setAttribute('from', 'user');
+
+				active_output_block = document.createElement('pre');
+				active_output_block.className = 'output';
+				chatBlock.appendChild(active_output_block);
+
+				container.appendChild(chatBlock);
+
+				window.api.executeSlashCommand(trimmed);
 				return;
 			}
 		} else if (trimmed === '/screen') {
 			if (!is_mobile) {
-				const container = document.getElementById('terminal-chat-container');
-				const active_block = document.getElementById('active-chat-block');
-
-				const out_pre = document.createElement('pre');
-				out_pre.className = 'output';
-				out_pre.textContent = 'Error: The /screen command is only available on mobile devices connection.';
-				active_block.appendChild(out_pre);
+				appendTerminalSystemMessage('Error: The /screen command is only available on mobile devices connection.', true);
 				appendNewPromptBlock(current_cwd);
 				return;
 			}
@@ -1494,6 +1508,9 @@ function submitInput(text, usePro = false) {
 				}
 			}
 			return;
+		} else if (trimmed.startsWith('/context')) {
+			handleContextCommand();
+			return;
 		} else if (trimmed.startsWith('/open')) {
 			const pathArg = trimmed.substring(5).trim();
 			handleOpenCommand(pathArg);
@@ -1607,13 +1624,13 @@ document.addEventListener('keydown', e => {
 			return;
 		}
 	}
-	if (active_editor_file_path) {
+	if (document.body.classList.contains('editor-active')) {
 		if (e.key === 'Escape') {
 			e.preventDefault();
 			closeEditor();
 			return;
 		}
-		if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+		if (active_editor_file_path && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
 			e.preventDefault();
 			saveEditorContent();
 			return;
@@ -3557,6 +3574,133 @@ function handleKeyShortcutSuggestions(query) {
 	renderSuggestions(suggestions);
 }
 
+async function handleContextCommand() {
+	try {
+		const contextInfo = await window.api.getContextInfo();
+		if (contextInfo.error) {
+			alert('Failed to get context: ' + contextInfo.error);
+			appendNewPromptBlock(current_cwd);
+			return;
+		}
+		await openContextEditor(contextInfo);
+		appendNewPromptBlock(current_cwd);
+	} catch (err) {
+		alert('Failed to get context: ' + err.message);
+		appendNewPromptBlock(current_cwd);
+	}
+}
+
+async function openContextEditor(contextInfo) {
+	const editorCode = document.getElementById('editor-code');
+	const lineNumbers = document.getElementById('editor-line-numbers');
+	const pathSpan = document.getElementById('editor-file-path');
+	const overlay = document.getElementById('editor-overlay');
+	const saveBtn = document.getElementById('editor-btn-save');
+	const toggleModeBtn = document.getElementById('editor-btn-toggle-mode');
+	const toggleLinesBtn = document.getElementById('editor-btn-toggle-lines');
+
+	is_dirty = false;
+	is_loading_file = true;
+	opened_from_changes = false;
+
+	window.editorDiffState = {
+		added: new Set(),
+		modified: new Set(),
+		deletedBefore: new Set(),
+		deletedAfter: new Set()
+	};
+
+	if (overlay) overlay.classList.remove('lines-hidden');
+	if (toggleLinesBtn) toggleLinesBtn.style.opacity = '';
+
+	// Hide Save and Diff Mode buttons for Context view
+	if (saveBtn) saveBtn.style.display = 'none';
+	if (toggleModeBtn) toggleModeBtn.style.display = 'none';
+
+	const formatNum = num => {
+		if (num >= 1000000) {
+			return parseFloat((num / 1000000).toFixed(2)) + 'M';
+		}
+		if (num >= 1000) {
+			return parseFloat((num / 1000).toFixed(2)) + 'K';
+		}
+		return num.toString();
+	};
+	pathSpan.textContent = `Context Window — ${formatNum(contextInfo.tokenCount)} / ${formatNum(contextInfo.maxTokens)} tokens`;
+
+	if (jar) jar.updateCode('');
+	if (lineNumbers) lineNumbers.textContent = '1';
+
+	document.body.classList.add('editor-active');
+
+	active_editor_file_path = null;
+
+	editor_mode = 'edit';
+	editorCode.setAttribute('contenteditable', 'false'); // read-only
+	editorCode.className = 'editor-code language-markdown';
+	editorCode.classList.add('editor-wrap');
+
+	if (lineNumbers) {
+		lineNumbers.style.fontFamily = '';
+		lineNumbers.style.textAlign = '';
+	}
+
+	const content = formatMessagesToMarkdown(contextInfo.messages);
+
+	if (jar) {
+		jar.updateCode(content);
+	}
+
+	updateEditorLineNumbers(content);
+	await updateScrollbarDecorations();
+
+	editorCode.focus();
+	is_loading_file = false;
+}
+
+function formatMessagesToMarkdown(messages) {
+	let md = '';
+	for (const msg of messages) {
+		const roleUpper = msg.role ? msg.role.toUpperCase() : 'UNKNOWN';
+
+		if (msg.role === 'system') {
+			md += `# SYSTEM MESSAGE\n\n${msg.content || ''}\n\n`;
+		} else if (msg.role === 'user') {
+			md += `# USER\n\n${msg.content || ''}\n\n`;
+		} else if (msg.role === 'assistant') {
+			md += `# ASSISTANT\n\n`;
+			if (msg.content) {
+				md += `${msg.content}\n\n`;
+			}
+			if (msg.tool_calls && msg.tool_calls.length > 0) {
+				for (const tc of msg.tool_calls) {
+					md += `## TOOL CALL: ${tc.function?.name || tc.name || ''}\n`;
+					let argsStr = '';
+					try {
+						if (typeof tc.function?.arguments === 'string') {
+							const parsed = JSON.parse(tc.function.arguments);
+							argsStr = JSON.stringify(parsed, null, 2);
+						} else {
+							argsStr = JSON.stringify(tc.function?.arguments || tc.arguments || {}, null, 2);
+						}
+					} catch (e) {
+						argsStr = tc.function?.arguments || tc.arguments || '';
+					}
+					md += `\`\`\`json\n${argsStr}\n\`\`\`\n\n`;
+				}
+			}
+		} else if (msg.role === 'tool') {
+			md += `# TOOL RESPONSE: ${msg.name || ''}\n\n`;
+			md += `\`\`\`\n${msg.content || ''}\n\`\`\`\n\n`;
+		} else {
+			md += `# ${roleUpper}\n\n${typeof msg.content === 'string' ? msg.content : JSON.stringify(msg)}\n\n`;
+		}
+
+		md += `---\n\n`;
+	}
+	return md.trim();
+}
+
 async function handleOpenCommand(pathArg) {
 	if (!pathArg) return;
 	openEditor(pathArg);
@@ -3592,6 +3736,9 @@ async function openEditor(filePath, fromChanges = false) {
 	is_dirty = false;
 	is_loading_file = true;
 	opened_from_changes = fromChanges;
+
+	const toggleModeBtn = document.getElementById('editor-btn-toggle-mode');
+	if (toggleModeBtn) toggleModeBtn.style.display = '';
 
 	window.editorDiffState = {
 		added: new Set(),

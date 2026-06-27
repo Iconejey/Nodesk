@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld("api", {
   toggleDebugMode: () => ipcRenderer.send("toggle-debug-mode"),
   requestState: () => ipcRenderer.send("request-state"),
   readDir: (dirPath) => ipcRenderer.invoke("read-dir", dirPath),
+  getContextInfo: () => ipcRenderer.invoke("get-context-info"),
   readFileContent: (filePath) =>
     ipcRenderer.invoke("read-file-content", filePath),
   saveFileContent: (filePath, content) =>

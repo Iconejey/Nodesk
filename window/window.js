@@ -530,6 +530,34 @@ function renderSuggestions(filtered) {
 				return;
 			}
 			const input = document.getElementById('active-input');
+			if (cmd.isAtFileSelf) {
+				const inputVal = input.textContent.replace(/\xa0/g, ' ');
+				const atIndex = inputVal.lastIndexOf('@');
+				if (atIndex !== -1) {
+					const beforeAt = inputVal.substring(0, atIndex);
+					input.textContent = beforeAt + cmd.name;
+				}
+				placeCaretAtEnd(input);
+				hideSuggestions();
+				input.dispatchEvent(new Event('input'));
+				return;
+			}
+			if (cmd.isAtFile) {
+				const inputVal = input.textContent.replace(/\xa0/g, ' ');
+				const atIndex = inputVal.lastIndexOf('@');
+				if (atIndex !== -1) {
+					const beforeAt = inputVal.substring(0, atIndex);
+					if (cmd.isDir) {
+						input.textContent = beforeAt + '@' + cmd.name + '/';
+					} else {
+						input.textContent = beforeAt + cmd.name;
+					}
+				}
+				placeCaretAtEnd(input);
+				hideSuggestions();
+				input.dispatchEvent(new Event('input'));
+				return;
+			}
 			const isCommand = cmd.name.startsWith('/');
 			const prefix = cmd.cmdPrefix || '/open';
 			input.textContent = isCommand ? cmd.name + ' ' : prefix + ' ' + cmd.name + (cmd.isDir ? '/' : ' ');
@@ -952,8 +980,12 @@ function setupInputListeners(input_elem) {
 			input_elem.classList.add('ai-prompt');
 		}
 
-		// Handle slash suggestions
-		if (text.startsWith('/open') || text.startsWith('/code')) {
+		// Handle file suggestions triggered by @
+		const atMatch = text.match(/(?:^|\s)@(\S*)$/);
+		if (atMatch) {
+			const query = atMatch[1];
+			handleAtFileSuggestions(query);
+		} else if (text.startsWith('/open') || text.startsWith('/code')) {
 			const cmdPrefix = text.startsWith('/open') ? '/open' : '/code';
 			const query = text.substring(cmdPrefix.length).trim();
 			handleOpenSuggestions(query, cmdPrefix);
@@ -1025,6 +1057,36 @@ function setupInputListeners(input_elem) {
 							.catch(err => {
 								appendTerminalSystemMessage('Connection failed: ' + err.message);
 							});
+						return;
+					}
+
+					if (active_suggestion && active_suggestion.isAtFileSelf) {
+						const inputVal = input_elem.textContent.replace(/\xa0/g, ' ');
+						const atIndex = inputVal.lastIndexOf('@');
+						if (atIndex !== -1) {
+							const beforeAt = inputVal.substring(0, atIndex);
+							input_elem.textContent = beforeAt + active_suggestion.name;
+						}
+						placeCaretAtEnd(input_elem);
+						hideSuggestions();
+						input_elem.dispatchEvent(new Event('input'));
+						return;
+					}
+
+					if (active_suggestion && active_suggestion.isAtFile) {
+						const inputVal = input_elem.textContent.replace(/\xa0/g, ' ');
+						const atIndex = inputVal.lastIndexOf('@');
+						if (atIndex !== -1) {
+							const beforeAt = inputVal.substring(0, atIndex);
+							if (active_suggestion.isDir) {
+								input_elem.textContent = beforeAt + '@' + active_suggestion.name + '/';
+							} else {
+								input_elem.textContent = beforeAt + active_suggestion.name;
+							}
+						}
+						placeCaretAtEnd(input_elem);
+						hideSuggestions();
+						input_elem.dispatchEvent(new Event('input'));
 						return;
 					}
 
@@ -3522,6 +3584,92 @@ async function handleOpenSuggestions(query, commandName) {
 				gitStatusColor: gitStatusColor
 			};
 		});
+
+		selected_suggestion_index = Math.min(selected_suggestion_index, Math.max(0, suggestions.length - 1));
+		renderSuggestions(suggestions);
+	} else {
+		hideSuggestions();
+	}
+}
+
+async function handleAtFileSuggestions(query) {
+	let dirPath = '.';
+	let filePrefix = query;
+
+	const lastSlashIndex = query.lastIndexOf('/');
+	if (lastSlashIndex !== -1) {
+		dirPath = query.substring(0, lastSlashIndex);
+		filePrefix = query.substring(lastSlashIndex + 1);
+	}
+
+	if (!open_command_cache || open_command_cache.dirPath !== dirPath) {
+		const result = await window.api.readDir(dirPath);
+		if (result && !result.error) {
+			open_command_cache = {
+				dirPath: dirPath,
+				resolved: result.resolved,
+				items: result.items
+			};
+		} else {
+			open_command_cache = null;
+		}
+	}
+
+	if (open_command_cache && open_command_cache.items) {
+		const matches = open_command_cache.items.filter(item => item.name.toLowerCase().startsWith(filePrefix.toLowerCase()));
+
+		const gitStatus = await window.api.readGitStatus();
+		const staged = (gitStatus && gitStatus.staged) || [];
+		const unstaged = (gitStatus && gitStatus.unstaged) || [];
+
+		const suggestions = matches.map(item => {
+			const pathPrefix = lastSlashIndex !== -1 ? query.substring(0, lastSlashIndex + 1) : '';
+
+			const itemAbsPath = open_command_cache.resolved + '/' + item.name;
+			let relPath = itemAbsPath;
+			if (workspace_root) {
+				if (relPath.startsWith(workspace_root)) {
+					relPath = relPath.substring(workspace_root.length);
+				}
+				if (relPath.startsWith('/')) {
+					relPath = relPath.substring(1);
+				}
+			}
+
+			let gitStatusColor = 'var(--white)';
+
+			const isStaged = staged.find(f => f.path === relPath);
+			const isUnstaged = unstaged.find(f => f.path === relPath);
+			const fileStatus = isStaged || isUnstaged;
+
+			if (fileStatus) {
+				if (fileStatus.type === 'addition') {
+					gitStatusColor = 'var(--green)';
+				} else {
+					gitStatusColor = 'var(--blue-soft)';
+				}
+			}
+
+			return {
+				name: pathPrefix + item.name,
+				description: item.is_directory ? 'Directory' : formatBytes(item.size),
+				isDir: item.is_directory,
+				isAtFile: true,
+				cmdPrefix: '@',
+				gitStatusColor: gitStatusColor
+			};
+		});
+
+		if (lastSlashIndex !== -1) {
+			const folderPath = query.substring(0, lastSlashIndex) + '/';
+			suggestions.unshift({
+				name: folderPath,
+				description: 'Select folder',
+				isDir: true,
+				isAtFileSelf: true,
+				gitStatusColor: 'var(--white)'
+			});
+		}
 
 		selected_suggestion_index = Math.min(selected_suggestion_index, Math.max(0, suggestions.length - 1));
 		renderSuggestions(suggestions);

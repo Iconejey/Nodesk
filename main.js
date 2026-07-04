@@ -4,6 +4,24 @@ const path = require('path');
 const os = require('os');
 const net = require('net');
 
+// Programmatically load .env file if it exists
+try {
+	const dotenvPath = path.join(__dirname, '.env');
+	if (fs.existsSync(dotenvPath)) {
+		const envConfig = fs.readFileSync(dotenvPath, 'utf8');
+		for (const line of envConfig.split('\n')) {
+			const trimmed = line.trim();
+			if (trimmed && !trimmed.startsWith('#')) {
+				const [key, ...values] = trimmed.split('=');
+				const value = values.join('=').trim();
+				process.env[key.trim()] = value;
+			}
+		}
+	}
+} catch (e) {
+	console.warn('Could not parse .env file programmatically:', e.message);
+}
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -686,6 +704,12 @@ function startMobileServer() {
 
 	return new Promise((resolve, reject) => {
 		let port = 13737;
+		if (process.env.PWA_SERVER_PORT) {
+			port = parseInt(process.env.PWA_SERVER_PORT, 10);
+		} else if (process.env.PORT) {
+			port = parseInt(process.env.PORT, 10);
+		}
+
 		const startListening = p => {
 			httpServer.listen(p, '0.0.0.0', () => {
 				server_port = p;
@@ -695,7 +719,7 @@ function startMobileServer() {
 			});
 
 			httpServer.on('error', err => {
-				if (err.code === 'EADDRINUSE' && p < 13745) {
+				if (err.code === 'EADDRINUSE' && p < port + 8) {
 					console.log(`Port ${p} in use, trying ${p + 1}...`);
 					httpServer.removeAllListeners('error');
 					startListening(p + 1);

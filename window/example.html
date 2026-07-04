@@ -2,7 +2,7 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
-		<title>Nono-Terminal - Style Debugger</title>
+		<title>Nodesk - Style Debugger</title>
 		<link rel="stylesheet" href="style.css" />
 		<style>
 			/* Custom Styles for Debugger Header */
@@ -189,7 +189,7 @@ no changes added to commit (use "git add" and/or "git commit -a")</pre>
 2. In main.js, runAgentLoop handles tool calls.
 3. Specifically, if tool call name is 'execute_command', it calls session.writeCommand().
 4. session.writeCommand sends the command to the stdin of a spawned bash process.
-5. It also appends a delimiter echo "__NONO_CMD_END__ $? $PWD" to capture exit code and new cwd.
+5. It also appends a delimiter echo "__NODESK_CMD_END__ $? $PWD" to capture exit code and new cwd.
 6. The stdout/stderr data listeners parse the output and send it to renderer via IPC.</pre>
 				</details>
 				

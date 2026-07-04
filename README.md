@@ -1,6 +1,6 @@
-# Nono-Terminal
+# Nodesk
 
-Nono-Terminal is an Electron-based persistent terminal emulator and workspace manager. It allows executing standard shell commands, managing directory pins, editing files in an inline code editor, and managing Git status all from a unified terminal-chat style interface.
+Nodesk is an Electron-based persistent terminal emulator and workspace manager. It allows executing standard shell commands, managing directory pins, editing files in an inline code editor, and managing Git status all from a unified terminal-chat style interface.
 
 ---
 
@@ -14,7 +14,7 @@ Nono-Terminal is an Electron-based persistent terminal emulator and workspace ma
 
 ## Architecture & Technical Stack
 
-Nono-Terminal separates the browser interface from your system using Electron IPC channels:
+Nodesk separates the browser interface from your system using Electron IPC channels:
 
 - **Renderer (Frontend):** Consists of `index.html`, `style.css`, and `window.js`. It utilizes custom styling with the Consolas font, Material Icons, and custom scrollbars.
 - **IPC Bridge (`preload.js`):** Exposes safe, context-isolated IPC channels to the renderer.
@@ -80,7 +80,7 @@ npm install
 
 ### Running on Arch Linux / Hyprland
 
-To ensure Wayland compatibility, fractional display scaling, and correct GPU rendering under tiling managers like Hyprland, it is recommended to run Nono-Terminal using your system-installed `electron` binary:
+To ensure Wayland compatibility, fractional display scaling, and correct GPU rendering under tiling managers like Hyprland, it is recommended to run Nodesk using your system-installed `electron` binary:
 
 ```bash
 electron .

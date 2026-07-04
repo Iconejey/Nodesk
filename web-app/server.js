@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 app.listen(PORT, () => {
 	const ip = getLocalIpAddress();
 	console.log('====================================================');
-	console.log(` Nono-Terminal VPS PWA server running on port ${PORT}`);
+	console.log(` Nodesk VPS PWA server running on port ${PORT}`);
 	console.log(` Local network link: http://${ip}:${PORT}`);
 	console.log(` Localhost link:     http://localhost:${PORT}`);
 	console.log('====================================================');

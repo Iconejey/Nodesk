@@ -1,4 +1,4 @@
-const CACHE_NAME = "nono-terminal-cache-v1";
+const CACHE_NAME = "nodesk-cache-v1";
 const ASSETS_TO_CACHE = [
   "/",
   "/index.html",

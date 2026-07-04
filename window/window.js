@@ -1,4 +1,4 @@
-// Renderer process UI logic for Nono-Terminal
+// Renderer process UI logic for Nodesk
 const is_mobile = !window.api || !window.api.isElectron;
 
 function showCancelButton() {
@@ -110,12 +110,12 @@ function getTargetUrl(ip, port) {
 
 function saveKnownHost(ip, port) {
 	try {
-		let known = JSON.parse(localStorage.getItem('nono_known_hosts')) || [];
+		let known = JSON.parse(localStorage.getItem('nodesk_known_hosts')) || [];
 		if (!Array.isArray(known)) known = [];
 		known = known.filter(h => h.ip !== ip || h.port !== port);
 		known.unshift({ ip, port });
 		if (known.length > 10) known = known.slice(0, 10);
-		localStorage.setItem('nono_known_hosts', JSON.stringify(known));
+		localStorage.setItem('nodesk_known_hosts', JSON.stringify(known));
 	} catch (e) {
 		console.error('Failed to save known host:', e);
 	}
@@ -157,10 +157,10 @@ async function startSubnetScan(ignoreKnown = false) {
 	if (!ignoreKnown) {
 		let knownHosts = [];
 		try {
-			const saved = JSON.parse(localStorage.getItem('nono_known_hosts')) || [];
+			const saved = JSON.parse(localStorage.getItem('nodesk_known_hosts')) || [];
 			if (saved.length === 0) {
-				const oldIp = localStorage.getItem('nono_ip');
-				const oldPort = localStorage.getItem('nono_port');
+				const oldIp = localStorage.getItem('nodesk_ip');
+				const oldPort = localStorage.getItem('nodesk_port');
 				if (oldIp && oldPort) {
 					saved.push({ ip: oldIp, port: oldPort });
 				}
@@ -272,7 +272,7 @@ async function startSubnetScan(ignoreKnown = false) {
 
 	isScanning = false;
 	if (!serverFound) {
-		renderConnectionOverlay('Scan complete. No active Nono-Terminal servers found.');
+		renderConnectionOverlay('Scan complete. No active Nodesk servers found.');
 	}
 }
 
@@ -3055,7 +3055,7 @@ window.api.onFingerprintPrompt(info => {
 	// If running on mobile (PWA browser), pop up a dialog to resolve the sudo prompt remotely
 	if (is_mobile) {
 		setTimeout(() => {
-			const password = prompt('Nono-Terminal: Sudo Password Required');
+			const password = prompt('Nodesk: Sudo Password Required');
 			if (password !== null && password !== '') {
 				window.api.sendSudoPassword(password);
 			}

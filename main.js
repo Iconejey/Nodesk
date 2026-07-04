@@ -1184,7 +1184,7 @@ class ShellSession {
 		this[buffer_name] = lines.pop();
 
 		for (const line of lines) {
-			const delim_index = line.indexOf('__NONO_CMD_END__');
+			const delim_index = line.indexOf('__NODESK_CMD_END__');
 			if (delim_index !== -1) {
 				const prefix = line.substring(0, delim_index);
 				if (prefix) {
@@ -1194,7 +1194,7 @@ class ShellSession {
 					});
 				}
 				const suffix = line.substring(delim_index);
-				const match = suffix.match(/__NONO_CMD_END__ (\d+) (.*)/);
+				const match = suffix.match(/__NODESK_CMD_END__ (\d+) (.*)/);
 				if (match) {
 					const exit_code = parseInt(match[1], 10);
 					const next_cwd = match[2].trim();
@@ -1217,7 +1217,7 @@ class ShellSession {
 	writeCommand(command, callback) {
 		this.active_command_callback = callback;
 		this.shell_proc.stdin.write(command + '\n');
-		this.shell_proc.stdin.write('echo "__NONO_CMD_END__ $? $PWD"\n');
+		this.shell_proc.stdin.write('echo "__NODESK_CMD_END__ $? $PWD"\n');
 	}
 
 	interrupt() {

@@ -4,7 +4,7 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
 		<meta name="theme-color" content="#191919" />
-		<title>Nono-Terminal</title>
+		<title>Nodesk</title>
 		<link rel="manifest" href="/manifest.json" />
 		<link rel="apple-touch-icon" href="https://icons.ngwy.fr/maskable/code/c792ea/242424/512/512" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
@@ -234,19 +234,19 @@
 									}
 
 									// Save state
-									localStorage.setItem('nono_ip', ip);
-									localStorage.setItem('nono_port', port);
-									localStorage.setItem('nono_window_id', windowId);
+									localStorage.setItem('nodesk_ip', ip);
+									localStorage.setItem('nodesk_port', port);
+									localStorage.setItem('nodesk_window_id', windowId);
 
 									// Save to known hosts list
 									try {
-										let known = JSON.parse(localStorage.getItem('nono_known_hosts')) || [];
+										let known = JSON.parse(localStorage.getItem('nodesk_known_hosts')) || [];
 										known = known.filter(h => h.ip !== ip || h.port !== port);
 										known.unshift({ ip, port });
 										if (known.length > 10) known = known.slice(0, 10);
-										localStorage.setItem('nono_known_hosts', JSON.stringify(known));
+										localStorage.setItem('nodesk_known_hosts', JSON.stringify(known));
 									} catch (e) {
-										console.error('Failed to save to nono_known_hosts:', e);
+										console.error('Failed to save to nodesk_known_hosts:', e);
 									}
 
 									socket.emit('register', { windowId: windowId });
@@ -393,7 +393,7 @@
 			<div class="diff-header">
 				<div class="diff-title-area">
 					<span class="material-symbols-outlined diff-icon">wifi_tethering</span>
-					<span class="diff-title">Connect to Nono-Terminal</span>
+					<span class="diff-title">Connect to Nodesk</span>
 				</div>
 				<div class="diff-actions">
 					<button id="conn-btn-refresh" class="btn-diff btn-refresh">

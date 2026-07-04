@@ -1,7 +1,7 @@
 {
-  "name": "Nono-Terminal",
-  "short_name": "Nono",
-  "description": "Premium persistent terminal with AI assistant",
+  "name": "Nodesk",
+  "short_name": "Nodesk",
+  "description": "Premium persistent terminal and workspace manager",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

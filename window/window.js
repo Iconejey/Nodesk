@@ -122,6 +122,9 @@ function saveKnownHost(ip, port) {
 }
 
 async function startSubnetScan(ignoreKnown = false) {
+	if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+		saveKnownHost(window.location.hostname, window.location.port || '13737');
+	}
 	if (isScanning) {
 		if (scanAbortController) {
 			scanAbortController.abort();

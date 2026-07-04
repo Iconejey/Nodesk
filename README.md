@@ -1,24 +1,15 @@
 # Nodesk
 
-Nodesk is an Electron-based persistent terminal emulator and workspace manager. It allows executing standard shell commands, managing directory pins, editing files in an inline code editor, and managing Git status all from a unified terminal-chat style interface.
+Nodesk is a progressive web app (PWA) remote terminal emulator and workspace manager. It allows executing standard shell commands, managing directory pins, editing files in an inline code editor, and managing Git status all from a unified terminal-chat style interface in your browser.
 
 ---
 
-## Todo list
-
-- Better file edit output print.
-- Handle multi-line shell inputs gracefully.
-- Autocompletion for file paths and directory names in the prompt.
-- /files slash command to toggle a file explorer view and navigate the workspace files.
-- Bash commands regex blacklist.
-
 ## Architecture & Technical Stack
 
-Nodesk separates the browser interface from your system using Electron IPC channels:
+Nodesk is built on a decoupled, client-server PWA architecture:
 
-- **Renderer (Frontend):** Consists of `index.html`, `style.css`, and `window.js`. It utilizes custom styling with the Consolas font, Material Icons, and custom scrollbars.
-- **IPC Bridge (`preload.js`):** Exposes safe, context-isolated IPC channels to the renderer.
-- **Main Process (`main.js`):** Manages a single-instance app lock, spawns persistent shell processes (mapping them to `event.sender.id`), handles local tool executions (like file editing and git helpers).
+- **Frontend (Client PWA):** Consists of `index.html`, `style.css`, and `window.js`. It utilizes custom styling, Material Icons, custom scrollbars, and includes a service worker (`sw.js`) for progressive web app functionality.
+- **Backend (Node.js Server):** A pure Node.js Express/Socket.io server (`main.js`) that hosts the static frontend files, spawns persistent shell processes (mapping them to connection session IDs), and handles remote command executions, file editing, and git status helpers.
 
 ---
 
@@ -46,10 +37,10 @@ Typing a `/` in the prompt opens an autocomplete popup box under the cursor.
 
 - `ArrowUp` / `ArrowDown`: Navigates the suggestions.
 - `Tab` / `Enter`: Autocompletes the highlighted suggestion.
-- _Note:_ The suggestions popup automatically hides once you type a space to let you input arguments naturally.
+- *Note:* The suggestions popup automatically hides once you type a space to let you input arguments naturally.
     - `/clear`: Clears screen history.
-    - `/exit`: Closes the current window.
-    - `/mobile`: Displays the local network address for the companion mobile PWA.
+    - `/exit`: Closes the current session.
+    - `/mobile`: Displays the local network address for companion PWA clients.
     - `/host`: Prints the local HTTP server address.
     - `/fullscreen`: Toggles fullscreen mode.
     - `/add-pin [path]`: Bookmarks/pins a directory in the startup quick access list (defaults to current directory if path is omitted).
@@ -59,9 +50,6 @@ Typing a `/` in the prompt opens an autocomplete popup box under the cursor.
 
 ## Keyboard Shortcuts
 
-- `Ctrl+R` / `Cmd+R`: Reloads the active window.
-- `Ctrl+Shift+I` / `Cmd+Option+I`: Toggles Chromium Developer Tools.
-- `Ctrl+Shift+D` / `Cmd+Shift+D`: Toggles debug mode (switches between `electron.html` and `example.html`).
 - `Ctrl+H` / `Cmd+H`: Cycles output collapse modes (`Full` ➔ `Collapsed` ➔ `Last`).
 - `Ctrl+C`: Interrupts running child processes (via `pkill -INT -P` against the shell PID) without closing the terminal shell.
 - `Ctrl+Enter`: Insert line break in command prompt.
@@ -78,16 +66,12 @@ Ensure Node.js and dependencies are installed:
 npm install
 ```
 
-### Running on Arch Linux / Hyprland
+### Running the Server
 
-To ensure Wayland compatibility, fractional display scaling, and correct GPU rendering under tiling managers like Hyprland, it is recommended to run Nodesk using your system-installed `electron` binary:
-
-```bash
-electron .
-```
-
-or:
+Start the headless server locally or on a remote VPS:
 
 ```bash
 npm start
 ```
+
+Access the app by opening `http://localhost:13737` (or the corresponding VPS IP address) in any modern web browser or mobile browser.

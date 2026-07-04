@@ -317,7 +317,6 @@ const slash_commands = [
 	{ name: '/clear', description: 'Clear terminal screen history' },
 	{ name: '/code', description: 'Open file in VS Code' },
 	{ name: '/changes', description: 'Show Git changed files categorized by staged/unstaged status' },
-	{ name: '/context', description: 'View the current context window size and contents' },
 	{ name: '/exit', description: 'Close current window' },
 	{ name: '/fullscreen', description: 'Toggle fullscreen mode for the window' },
 	{ name: '/help', description: 'Show list of available commands' },
@@ -346,12 +345,8 @@ const slash_commands = [
 		description: 'List available keyboard shortcuts with descriptions'
 	},
 	{
-		name: '/test-md',
-		description: 'Simulate AI responding with markdown-debug-example.md content to test/debug markdown styling'
-	},
-	{
 		name: '/test-sound',
-		description: 'Trigger diagnostic chime test for questions & fingerprint auth'
+		description: 'Trigger diagnostic chime test for fingerprint auth'
 	},
 	{
 		name: '/update',
@@ -363,87 +358,10 @@ let selected_suggestion_index = 0;
 let current_collapse_mode = 'full'; // 'full', 'collapsed', 'last', 'user'
 
 let active_output_block = null;
-let active_assistant_block = null;
-let active_assistant_text = '';
-let active_thinking_details = null;
-let active_thinking_content = null;
-let active_message_content = null;
-
-let active_agent_run_details = null;
-let active_agent_run_content = null;
-let active_agent_run_status = null;
-let current_agent_tokens = null;
-let current_thinking_block = null;
-
-function formatTokenCount(num) {
-	if (typeof num !== 'number') return num;
-	if (num < 1000) {
-		return num.toString();
-	}
-	if (num >= 1000000) {
-		const val = num / 1000000;
-		const formatted = val.toFixed(1);
-		return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'M';
-	}
-	const val = num / 1000;
-	const formatted = val.toFixed(1);
-	return (formatted.endsWith('.0') ? formatted.slice(0, -2) : formatted) + 'K';
-}
-
-function updateAgentStatusDisplay(text) {
-	if (!active_agent_run_status) return;
-	
-	let baseText = text;
-	const parenIndex = baseText.indexOf(' (');
-	if (parenIndex !== -1 && baseText.includes('/')) {
-		baseText = baseText.substring(0, parenIndex);
-	}
-	
-	if (current_agent_tokens && current_agent_tokens.max_tokens) {
-		const promptStr = formatTokenCount(current_agent_tokens.prompt_tokens);
-		const maxStr = formatTokenCount(current_agent_tokens.max_tokens);
-		active_agent_run_status.textContent = `${baseText} (${promptStr} / ${maxStr} tokens)`;
-	} else {
-		active_agent_run_status.textContent = baseText;
-	}
-}
-
-function getAgentStatusBaseText() {
-	if (!active_agent_run_status) return '';
-	const text = active_agent_run_status.textContent;
-	const parenIndex = text.indexOf(' (');
-	if (parenIndex !== -1 && text.includes('/')) {
-		return text.substring(0, parenIndex);
-	}
-	return text;
-}
 
 let available_commands = new Set();
 
-// Heuristic to detect if input represents a shell command vs AI prompt
-function isShellCommand(text) {
-	if (text.includes('\n')) {
-		return false;
-	}
-	const trimmed = text.trim();
-	if (!trimmed) return true;
 
-	const first_word = trimmed.split(/\s+/)[0];
-
-	if (trimmed.startsWith('./') || trimmed.startsWith('../') || trimmed.startsWith('/') || trimmed.startsWith('~/')) {
-		return true;
-	}
-
-	if (available_commands.has(first_word)) {
-		return true;
-	}
-
-	if (/[\x7C><&=;]/.test(trimmed)) {
-		return true;
-	}
-
-	return false;
-}
 
 // Set caret position to end of contenteditable
 function placeCaretAtEnd(el) {
@@ -603,128 +521,8 @@ function formatDiffText(diff_text) {
 	return formatted_lines.join('\n');
 }
 
-// Parse thinking and message content from streamed LLM responses
-function parseThinkingAndContent(text) {
-	let thinking = '';
-	let content = '';
 
-	const start_idx = text.indexOf('<thinking>');
-	const end_idx = text.indexOf('</thinking>');
 
-	if (start_idx !== -1) {
-		if (end_idx !== -1) {
-			thinking = text.substring(start_idx + 10, end_idx);
-			content = text.substring(0, start_idx) + text.substring(end_idx + 11);
-		} else {
-			thinking = text.substring(start_idx + 10);
-			content = text.substring(0, start_idx);
-		}
-	} else {
-		content = text;
-	}
-
-	return { thinking: thinking.trim(), content: content.trim() };
-}
-
-function updateThinkingSummary(details, content) {
-	const summary = details.querySelector('summary');
-	if (!summary) return;
-	const lines = content.textContent.split('\n');
-	const line_count = lines.length;
-	if (details.open) {
-		summary.textContent = 'Reasoning Process';
-	} else {
-		summary.textContent = `Reasoning Process (${line_count} line${line_count === 1 ? '' : 's'})`;
-	}
-}
-
-function updateAgentRunSummary(details) {
-	if (!details) return;
-	const statusSpan = details.querySelector('.status-text');
-	if (!statusSpan) return;
-	if (details.classList.contains('running')) {
-		return;
-	}
-	if (details.open) {
-		const contentDiv = details.querySelector('.run-details-content');
-		let lastOutput = '';
-		if (contentDiv) {
-			const children = Array.from(contentDiv.children);
-			for (let i = children.length - 1; i >= 0; i--) {
-				const child = children[i];
-				if (child.classList.contains('input')) {
-					lastOutput = child.textContent.trim();
-					break;
-				}
-			}
-		}
-		statusSpan.textContent = lastOutput || 'Agent Process';
-	} else {
-		const contentDiv = details.querySelector('.run-details-content');
-		let stepsCount = 0;
-		if (contentDiv) {
-			stepsCount = Array.from(contentDiv.children).filter(child => {
-				return child.classList.contains('input') || child.classList.contains('thinking-content');
-			}).length;
-		}
-		statusSpan.textContent = `Agent Process (${stepsCount} step${stepsCount === 1 ? '' : 's'})`;
-	}
-}
-
-function renderThinkingMessage(elem, text) {
-	if (window.marked) {
-		elem.innerHTML = window.marked.parse(text);
-		if (window.Prism) {
-			window.Prism.highlightAllUnder(elem);
-		}
-	} else {
-		elem.textContent = text;
-	}
-}
-
-function initAgentRunUI() {
-	const container = document.getElementById('terminal-chat-container');
-
-	active_assistant_block = document.createElement('chat-block');
-	active_assistant_block.setAttribute('from', 'assistant');
-
-	active_agent_run_details = document.createElement('details');
-	active_agent_run_details.className = 'agent-run-details running';
-
-	const summary = document.createElement('summary');
-	summary.className = 'chat-marker';
-
-	const spin_star = document.createElement('span');
-	spin_star.className = 'spin-star';
-	spin_star.textContent = '✦';
-	summary.appendChild(spin_star);
-
-	active_agent_run_status = document.createElement('span');
-	active_agent_run_status.className = 'status-text';
-	current_agent_tokens = null;
-	updateAgentStatusDisplay('Working...');
-	summary.appendChild(active_agent_run_status);
-	active_agent_run_details.appendChild(summary);
-
-	active_agent_run_content = document.createElement('div');
-	active_agent_run_content.className = 'run-details-content';
-	active_agent_run_details.appendChild(active_agent_run_content);
-
-	active_assistant_block.appendChild(active_agent_run_details);
-	container.appendChild(active_assistant_block);
-
-	active_assistant_text = '';
-	current_thinking_block = null;
-	active_thinking_details = null;
-	active_thinking_content = null;
-	active_message_content = null;
-
-	active_agent_run_details.addEventListener('toggle', e => {
-		updateAgentRunSummary(e.currentTarget);
-	});
-
-	window.scrollTo(0, document.body.scrollHeight);
-}
 
 // Maximum number of lines to show in output before truncating
 const MAX_OUTPUT_LINES = 8;
@@ -980,12 +778,7 @@ function setupInputListeners(input_elem) {
 			return;
 		}
 
-		// Toggle green/purple chevron based on shell command heuristics
-		if (isShellCommand(text)) {
-			input_elem.classList.remove('ai-prompt');
-		} else {
-			input_elem.classList.add('ai-prompt');
-		}
+		input_elem.classList.remove('ai-prompt');
 
 		// Handle file suggestions triggered by @
 		const atMatch = text.match(/(?:^|\s)@(\S*)$/);
@@ -1587,9 +1380,7 @@ function submitInput(text, usePro = false) {
 				}
 			}
 			return;
-		} else if (trimmed.startsWith('/context')) {
-			handleContextCommand();
-			return;
+
 		} else if (trimmed.startsWith('/open')) {
 			const pathArg = trimmed.substring(5).trim();
 			handleOpenCommand(pathArg);
@@ -1612,28 +1403,11 @@ function submitInput(text, usePro = false) {
   Ctrl+H (Cmd+H)        - Cycle collapse modes (Full, Collapsed, Last-Only, User)
   Ctrl+L (Cmd+L)        - Clear terminal screen history
   Ctrl+C (Cmd+C)        - Interrupt active command execution (when no text selected)
-  Ctrl+Enter            - Insert line break in prompt (forces AI prompt mode)
-  Ctrl+Shift+Enter      - Submit AI prompt using the 'pro' tier model config
+  Ctrl+Enter            - Insert line break in prompt
   Arrow Up / Down       - Navigate input command history`;
 
 			active_block.appendChild(out_pre);
 			appendNewPromptBlock();
-			return;
-		} else if (trimmed.startsWith('/test-md')) {
-			const active_block = document.getElementById('active-chat-block');
-			const filePath = workspace_root ? `${workspace_root}/markdown-debug-example.md` : 'markdown-debug-example.md';
-
-			window.api.readFileContent(filePath).then(result => {
-				if (result.error) {
-					const out_pre = document.createElement('pre');
-					out_pre.className = 'output';
-					out_pre.textContent = `Error reading markdown-debug-example.md: ${result.error}`;
-					active_block.appendChild(out_pre);
-					appendNewPromptBlock();
-				} else {
-					simulateAgentResponse(result.content);
-				}
-			});
 			return;
 		} else if (trimmed.startsWith('/update')) {
 			const active_block = document.getElementById('active-chat-block');
@@ -1673,18 +1447,12 @@ function submitInput(text, usePro = false) {
 		return;
 	}
 
-	// Check if AI Prompt or Shell Command
-	if (isShellCommand(text)) {
-		const active_block = document.getElementById('active-chat-block');
-		active_output_block = document.createElement('pre');
-		active_output_block.className = 'output';
-		active_block.appendChild(active_output_block);
+	const active_block = document.getElementById('active-chat-block');
+	active_output_block = document.createElement('pre');
+	active_output_block.className = 'output';
+	active_block.appendChild(active_output_block);
 
-		window.api.sendUserCommand(trimmed);
-	} else {
-		initAgentRunUI();
-		window.api.sendAgentPrompt(trimmed, usePro);
-	}
+	window.api.sendUserCommand(trimmed);
 }
 
 // Global hotkeys
@@ -3207,18 +2975,7 @@ window.api.onShellCommandStart(({ command }) => {
 	}
 });
 
-window.api.onAgentPromptStart(({ prompt, usePro }) => {
-	showCancelButton();
-	const input_elem = document.getElementById('active-input');
-	if (input_elem && input_elem.hasAttribute('contenteditable')) {
-		input_elem.textContent = prompt;
-		input_elem.removeAttribute('contenteditable');
-		input_elem.classList.add('ai-prompt');
 
-		initAgentRunUI();
-		hideSuggestions();
-	}
-});
 
 window.api.onShellOutput(data => {
 	if (active_output_block) {
@@ -3239,229 +2996,7 @@ window.api.onShellComplete(info => {
 	appendNewPromptBlock(info.cwd);
 });
 
-// Agent messages and tool responses
 
-window.api.onAgentStatus((status, tokens) => {
-	console.log('Agent status:', status, tokens);
-	if (tokens) {
-		current_agent_tokens = tokens;
-	}
-	if (active_agent_run_details) {
-		if (active_agent_run_status) {
-			const current = getAgentStatusBaseText();
-			if (current === 'Working...' || current === 'Thinking...' || (status !== 'Thinking...' && status !== 'Working...')) {
-				updateAgentStatusDisplay(status);
-			} else if (tokens) {
-				updateAgentStatusDisplay(current);
-			}
-		}
-		if (status === 'Timeout, retrying...') {
-			const pre_timeout = document.createElement('pre');
-			pre_timeout.className = 'thinking-content';
-			pre_timeout.style.color = 'var(--red)';
-			pre_timeout.textContent = 'Timeout, retrying...';
-			active_agent_run_content.appendChild(pre_timeout);
-			current_thinking_block = null;
-		}
-	}
-});
-
-window.api.onAgentChunk(info => {
-	if (!active_assistant_block || !active_agent_run_details) {
-		initAgentRunUI();
-	}
-
-	active_assistant_text += info.text;
-
-	const parsed = parseThinkingAndContent(active_assistant_text);
-
-	if (active_agent_run_status) {
-		const current = getAgentStatusBaseText();
-		if (current === 'Working...') {
-			updateAgentStatusDisplay('Thinking...');
-		}
-	}
-
-	if (!current_thinking_block) {
-		current_thinking_block = document.createElement('div');
-		current_thinking_block.className = 'thinking-content';
-		active_agent_run_content.appendChild(current_thinking_block);
-	}
-
-	let textToShow = '';
-	if (parsed.thinking) {
-		textToShow += parsed.thinking;
-	}
-	if (parsed.content) {
-		if (textToShow) textToShow += '\n';
-		textToShow += parsed.content;
-	}
-
-	renderThinkingMessage(current_thinking_block, textToShow);
-
-	window.scrollTo(0, document.body.scrollHeight);
-});
-
-window.api.onAgentToolStart(info => {
-	if (!active_assistant_block || !active_agent_run_details) {
-		initAgentRunUI();
-	}
-
-	let label = '';
-	if (info.name === 'read_file') label = `Reading ${info.args.path}`;
-	else if (info.name === 'edit_file') label = `Editing ${info.args.path}`;
-	else if (info.name === 'search_codebase') label = `Searching codebase for "${info.args.query}"`;
-	else if (info.name === 'list_directory') label = `Listing directory ${info.args.path || '.'}`;
-	else if (info.name === 'web_search') label = `Searching the web for "${info.args.query}"`;
-	else label = `Running ${info.name}`;
-
-	if (info.name === 'execute_command') {
-		const commandText = info.args.command;
-
-		if (active_agent_run_status) {
-			updateAgentStatusDisplay(commandText);
-		}
-
-		const pre_input = document.createElement('pre');
-		pre_input.className = 'input chat-marker';
-		pre_input.dataset.toolCallId = info.tool_call_id;
-		pre_input.textContent = commandText;
-
-		const pre_output = document.createElement('pre');
-		pre_output.className = 'output';
-
-		active_agent_run_content.appendChild(pre_input);
-		active_agent_run_content.appendChild(pre_output);
-
-		active_output_block = pre_output;
-	} else {
-		if (active_agent_run_status) {
-			updateAgentStatusDisplay(label + '...');
-		}
-
-		const pre_status = document.createElement('pre');
-		pre_status.className = 'input chat-marker';
-		pre_status.dataset.toolCallId = info.tool_call_id;
-		pre_status.textContent = label;
-
-		active_agent_run_content.appendChild(pre_status);
-	}
-
-	active_assistant_text = '';
-	current_thinking_block = null;
-
-	window.scrollTo(0, document.body.scrollHeight);
-});
-
-window.api.onAgentToolOutput(info => {
-	const container = document.getElementById('terminal-chat-container');
-	const active_tool_elem = container.querySelector(`pre.input[data-tool-call-id="${info.tool_call_id}"]`);
-
-	if (active_tool_elem) {
-		let diff_pre = active_tool_elem.nextElementSibling;
-		if (!diff_pre || !diff_pre.classList.contains('output')) {
-			diff_pre = document.createElement('pre');
-			diff_pre.className = 'output';
-			active_tool_elem.after(diff_pre);
-		}
-		diff_pre.innerHTML = formatDiffText(info.text);
-		addOutputPlaceholder(diff_pre);
-	} else if (active_output_block) {
-		active_output_block.textContent += info.text;
-	}
-
-	window.scrollTo(0, document.body.scrollHeight);
-});
-
-window.api.onAgentToolComplete(info => {
-	if (active_output_block) {
-		addOutputPlaceholder(active_output_block);
-	}
-	active_output_block = null;
-	window.scrollTo(0, document.body.scrollHeight);
-});
-
-window.api.onAgentComplete(() => {
-	hideCancelButton();
-
-	const finalParsed = parseThinkingAndContent(active_assistant_text);
-
-	if (current_thinking_block) {
-		if (finalParsed.thinking) {
-			renderThinkingMessage(current_thinking_block, finalParsed.thinking);
-		} else {
-			current_thinking_block.remove();
-		}
-	}
-
-	if (active_agent_run_details) {
-		active_agent_run_details.classList.remove('running');
-		updateAgentRunSummary(active_agent_run_details);
-	}
-
-	if (finalParsed.content && active_assistant_block) {
-		active_message_content = document.createElement('div');
-		active_message_content.className = 'input msg chat-marker';
-
-		if (window.marked) {
-			active_message_content.innerHTML = window.marked.parse(finalParsed.content);
-			if (window.Prism) {
-				window.Prism.highlightAllUnder(active_message_content);
-			}
-		} else {
-			active_message_content.textContent = finalParsed.content;
-		}
-
-		active_assistant_block.appendChild(active_message_content);
-	}
-
-	active_assistant_block = null;
-	active_agent_run_details = null;
-	active_agent_run_content = null;
-	active_agent_run_status = null;
-	current_thinking_block = null;
-
-	appendNewPromptBlock();
-});
-
-// Plays a soft two-tone chime using the Web Audio API — no sound file required.
-function playQuestionChime() {
-	try {
-		const ctx = new (window.AudioContext || window.webkitAudioContext)();
-		if (ctx.state === 'suspended') {
-			ctx.resume().catch(err => console.warn('Failed to resume AudioContext:', err));
-		}
-
-		function playTone(freq, startTime, duration, gain = 0.18) {
-			const osc = ctx.createOscillator();
-			const env = ctx.createGain();
-			osc.connect(env);
-			env.connect(ctx.destination);
-			osc.type = 'sine';
-			osc.frequency.setValueAtTime(freq, startTime);
-			env.gain.setValueAtTime(0, startTime);
-			env.gain.linearRampToValueAtTime(gain, startTime + 0.02);
-			env.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-			osc.start(startTime);
-			osc.stop(startTime + duration);
-		}
-
-		const now = ctx.currentTime;
-		playTone(880, now, 0.35);        // A5 — first note
-		playTone(1318.5, now + 0.18, 0.45); // E6 — second note (major 6th up)
-
-		// Close context after the sound finishes to avoid resource leaks
-		setTimeout(() => ctx.close(), 800);
-	} catch (e) {
-		console.error('Web Audio playQuestionChime failed:', e);
-	}
-}
-
-window.api.onAgentAskUser(info => {
-	// Play chime to alert the user that input is required
-	playQuestionChime();
-	console.log('[Agent] Asking user:', info.question, info.options);
-});
 
 // Plays a triple rising sweep chime for fingerprint authentication / credential request.
 function playFingerprintChime() {
@@ -3760,132 +3295,7 @@ async function handleBashCommandSuggestions(query) {
 	}
 }
 
-async function handleContextCommand() {
-	try {
-		const contextInfo = await window.api.getContextInfo();
-		if (contextInfo.error) {
-			alert('Failed to get context: ' + contextInfo.error);
-			appendNewPromptBlock(current_cwd);
-			return;
-		}
-		await openContextEditor(contextInfo);
-		appendNewPromptBlock(current_cwd);
-	} catch (err) {
-		alert('Failed to get context: ' + err.message);
-		appendNewPromptBlock(current_cwd);
-	}
-}
 
-async function openContextEditor(contextInfo) {
-	const editorCode = document.getElementById('editor-code');
-	const lineNumbers = document.getElementById('editor-line-numbers');
-	const pathSpan = document.getElementById('editor-file-path');
-	const overlay = document.getElementById('editor-overlay');
-	const saveBtn = document.getElementById('editor-btn-save');
-	const toggleModeBtn = document.getElementById('editor-btn-toggle-mode');
-	const toggleLinesBtn = document.getElementById('editor-btn-toggle-lines');
-
-	is_dirty = false;
-	is_loading_file = true;
-	opened_from_changes = false;
-
-	window.editorDiffState = {
-		added: new Set(),
-		modified: new Set(),
-		deletedBefore: new Set(),
-		deletedAfter: new Set()
-	};
-
-	if (overlay) overlay.classList.remove('lines-hidden');
-	if (toggleLinesBtn) toggleLinesBtn.style.opacity = '';
-
-	// Hide Save and Diff Mode buttons for Context view
-	if (saveBtn) saveBtn.style.display = 'none';
-	if (toggleModeBtn) toggleModeBtn.style.display = 'none';
-
-	const formatNum = num => {
-		if (num >= 1000000) {
-			return parseFloat((num / 1000000).toFixed(2)) + 'M';
-		}
-		if (num >= 1000) {
-			return parseFloat((num / 1000).toFixed(2)) + 'K';
-		}
-		return num.toString();
-	};
-	pathSpan.textContent = `Context Window — ${formatNum(contextInfo.tokenCount)} / ${formatNum(contextInfo.maxTokens)} tokens`;
-
-	if (jar) jar.updateCode('');
-	if (lineNumbers) lineNumbers.textContent = '1';
-
-	document.body.classList.add('editor-active');
-
-	active_editor_file_path = null;
-
-	editor_mode = 'edit';
-	editorCode.setAttribute('contenteditable', 'false'); // read-only
-	editorCode.className = 'editor-code language-markdown';
-	editorCode.classList.add('editor-wrap');
-
-	if (lineNumbers) {
-		lineNumbers.style.fontFamily = '';
-		lineNumbers.style.textAlign = '';
-	}
-
-	const content = formatMessagesToMarkdown(contextInfo.messages);
-
-	if (jar) {
-		jar.updateCode(content);
-	}
-
-	updateEditorLineNumbers(content);
-	await updateScrollbarDecorations();
-
-	editorCode.focus();
-	is_loading_file = false;
-}
-
-function formatMessagesToMarkdown(messages) {
-	let md = '';
-	for (const msg of messages) {
-		const roleUpper = msg.role ? msg.role.toUpperCase() : 'UNKNOWN';
-
-		if (msg.role === 'system') {
-			md += `# SYSTEM MESSAGE\n\n${msg.content || ''}\n\n`;
-		} else if (msg.role === 'user') {
-			md += `# USER\n\n${msg.content || ''}\n\n`;
-		} else if (msg.role === 'assistant') {
-			md += `# ASSISTANT\n\n`;
-			if (msg.content) {
-				md += `${msg.content}\n\n`;
-			}
-			if (msg.tool_calls && msg.tool_calls.length > 0) {
-				for (const tc of msg.tool_calls) {
-					md += `## TOOL CALL: ${tc.function?.name || tc.name || ''}\n`;
-					let argsStr = '';
-					try {
-						if (typeof tc.function?.arguments === 'string') {
-							const parsed = JSON.parse(tc.function.arguments);
-							argsStr = JSON.stringify(parsed, null, 2);
-						} else {
-							argsStr = JSON.stringify(tc.function?.arguments || tc.arguments || {}, null, 2);
-						}
-					} catch (e) {
-						argsStr = tc.function?.arguments || tc.arguments || '';
-					}
-					md += `\`\`\`json\n${argsStr}\n\`\`\`\n\n`;
-				}
-			}
-		} else if (msg.role === 'tool') {
-			md += `# TOOL RESPONSE: ${msg.name || ''}\n\n`;
-			md += `\`\`\`\n${msg.content || ''}\n\`\`\`\n\n`;
-		} else {
-			md += `# ${roleUpper}\n\n${typeof msg.content === 'string' ? msg.content : JSON.stringify(msg)}\n\n`;
-		}
-
-		md += `---\n\n`;
-	}
-	return md.trim();
-}
 
 async function handleOpenCommand(pathArg) {
 	if (!pathArg) return;
@@ -4208,90 +3618,7 @@ function toggleLineNumbers() {
 	}
 }
 
-function simulateAgentResponse(fullText) {
-	initAgentRunUI();
 
-	const chunkSize = 30;
-	let currentIndex = 0;
-
-	const intervalId = setInterval(() => {
-		if (currentIndex >= fullText.length) {
-			clearInterval(intervalId);
-
-			const finalParsed = parseThinkingAndContent(active_assistant_text);
-
-			if (current_thinking_block) {
-				if (finalParsed.thinking) {
-					renderThinkingMessage(current_thinking_block, finalParsed.thinking);
-				} else {
-					current_thinking_block.remove();
-				}
-			}
-
-			if (active_agent_run_details) {
-				active_agent_run_details.classList.remove('running');
-				updateAgentRunSummary(active_agent_run_details);
-			}
-
-			if (finalParsed.content && active_assistant_block) {
-				active_message_content = document.createElement('div');
-				active_message_content.className = 'input msg chat-marker';
-
-				if (window.marked) {
-					active_message_content.innerHTML = window.marked.parse(finalParsed.content);
-					if (window.Prism) {
-						window.Prism.highlightAllUnder(active_message_content);
-					}
-				} else {
-					active_message_content.textContent = finalParsed.content;
-				}
-
-				active_assistant_block.appendChild(active_message_content);
-			}
-
-			active_assistant_block = null;
-			active_agent_run_details = null;
-			active_agent_run_content = null;
-			active_agent_run_status = null;
-			current_thinking_block = null;
-
-			appendNewPromptBlock();
-			return;
-		}
-
-		const chunkText = fullText.slice(currentIndex, currentIndex + chunkSize);
-		currentIndex += chunkSize;
-
-		active_assistant_text += chunkText;
-		const parsed = parseThinkingAndContent(active_assistant_text);
-
-		if (active_agent_run_status) {
-			const current = getAgentStatusBaseText();
-			if (current === 'Working...') {
-				updateAgentStatusDisplay('Thinking...');
-			}
-		}
-
-		if (!current_thinking_block) {
-			current_thinking_block = document.createElement('div');
-			current_thinking_block.className = 'thinking-content';
-			active_agent_run_content.appendChild(current_thinking_block);
-		}
-
-		let textToShow = '';
-		if (parsed.thinking) {
-			textToShow += parsed.thinking;
-		}
-		if (parsed.content) {
-			if (textToShow) textToShow += '\n';
-			textToShow += parsed.content;
-		}
-
-		renderThinkingMessage(current_thinking_block, textToShow);
-
-		window.scrollTo(0, document.body.scrollHeight);
-	}, 15);
-}
 
 async function openDiffOverlay() {
 	document.body.classList.add('diff-active');
@@ -4533,31 +3860,7 @@ async function loadDiffOverlayContent(container) {
 	commitInput.placeholder = 'Enter commit message...';
 	commitInput.rows = 1;
 
-	const btnMagic = document.createElement('button');
-	btnMagic.className = 'btn-magic';
-	btnMagic.title = 'Generate commit message with AI';
-	btnMagic.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.3em">magic_button</span>`;
-
-	btnMagic.addEventListener('click', async () => {
-		if (status.staged.length === 0) {
-			showStatusMsg('Stage some changes first to generate a commit message!', true);
-			return;
-		}
-		btnMagic.disabled = true;
-		btnMagic.innerHTML = `<span class="material-symbols-outlined spinner" style="font-size: 1.3em">sync</span>`;
-		const res = await window.api.gitGenerateCommitMsg();
-		btnMagic.disabled = false;
-		btnMagic.innerHTML = `<span class="material-symbols-outlined" style="font-size: 1.3em">magic_button</span>`;
-		if (res.error) {
-			showStatusMsg('AI Generation failed: ' + res.error, true);
-		} else if (res.message) {
-			commitInput.value = res.message;
-			btnCommit.disabled = false;
-		}
-	});
-
 	commitInputWrapper.appendChild(commitInput);
-	commitInputWrapper.appendChild(btnMagic);
 	commitSection.appendChild(commitInputWrapper);
 
 	const btnCommit = document.createElement('button');

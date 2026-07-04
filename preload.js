@@ -3,25 +3,11 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("api", {
   isElectron: true,
   sendUserCommand: (command) => ipcRenderer.send("run-user-command", command),
-  sendAgentPrompt: (prompt, usePro) =>
-    ipcRenderer.send("run-agent-prompt", prompt, usePro),
   sendInterrupt: () => ipcRenderer.send("shell-interrupt"),
   onShellOutput: (callback) =>
     ipcRenderer.on("shell-output", (event, data) => callback(data)),
   onShellComplete: (callback) =>
     ipcRenderer.on("shell-complete", (event, info) => callback(info)),
-  onAgentChunk: (callback) =>
-    ipcRenderer.on("agent-chunk", (event, info) => callback(info)),
-  onAgentComplete: (callback) =>
-    ipcRenderer.on("agent-complete", (event) => callback()),
-  onAgentToolStart: (callback) =>
-    ipcRenderer.on("agent-tool-start", (event, info) => callback(info)),
-  onAgentToolOutput: (callback) =>
-    ipcRenderer.on("agent-tool-output", (event, info) => callback(info)),
-  onAgentToolComplete: (callback) =>
-    ipcRenderer.on("agent-tool-complete", (event, info) => callback(info)),
-  onAgentStatus: (callback) =>
-    ipcRenderer.on("agent-status", (event, ...args) => callback(...args)),
   onWindowInit: (callback) =>
     ipcRenderer.on("window-init", (event, info) => callback(info)),
   onShowQrCode: (callback) =>
@@ -32,15 +18,11 @@ contextBridge.exposeInMainWorld("api", {
     ipcRenderer.on("pinned-dirs-updated", (event, info) => callback(info)),
   onShellCommandStart: (callback) =>
     ipcRenderer.on("shell-command-start", (event, info) => callback(info)),
-  onAgentPromptStart: (callback) =>
-    ipcRenderer.on("agent-prompt-start", (event, info) => callback(info)),
   executeSlashCommand: (command) =>
     ipcRenderer.send("execute-slash-command", command),
-  sendApiKey: (key) => ipcRenderer.send("send-api-key", key),
   toggleDebugMode: () => ipcRenderer.send("toggle-debug-mode"),
   requestState: () => ipcRenderer.send("request-state"),
   readDir: (dirPath) => ipcRenderer.invoke("read-dir", dirPath),
-  getContextInfo: () => ipcRenderer.invoke("get-context-info"),
   readFileContent: (filePath) =>
     ipcRenderer.invoke("read-file-content", filePath),
   saveFileContent: (filePath, content) =>
@@ -56,7 +38,6 @@ contextBridge.exposeInMainWorld("api", {
   gitPush: () => ipcRenderer.invoke("git-push"),
   gitCommit: (message) => ipcRenderer.invoke("git-commit", message),
   gitCommitHistory: () => ipcRenderer.invoke("git-commit-history"),
-  gitGenerateCommitMsg: () => ipcRenderer.invoke("git-generate-commit-msg"),
   getBashCommands: (query) => ipcRenderer.invoke("get-bash-commands", query),
   getScreenSourceId: () => ipcRenderer.invoke("get-screen-source-id"),
   sendWebRtcSignalToMobile: (socketId, signal) =>
@@ -79,14 +60,6 @@ contextBridge.exposeInMainWorld("api", {
   injectKeyShortcut: (shortcut) => ipcRenderer.send("inject-key-shortcut", shortcut),
   sendScreenBg: (socketId, jpegData) =>
     ipcRenderer.send("send-screen-bg", socketId, jpegData),
-  onAgentAskUser: (callback) =>
-    ipcRenderer.on("agent-ask-user", (event, info) => callback(info)),
-  sendAgentUserAnswer: (answer) =>
-    ipcRenderer.send("agent-user-answer", answer),
-  onAgentTodoUpdate: (callback) =>
-    ipcRenderer.on("agent-todo-update", (event, info) => callback(info)),
-  onAgentPlanMode: (callback) =>
-    ipcRenderer.on("agent-plan-mode", (event, info) => callback(info)),
   onFingerprintPrompt: (callback) =>
     ipcRenderer.on("fingerprint-prompt", (event, info) => callback(info)),
   sendSudoPassword: (password) =>

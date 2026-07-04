@@ -64,15 +64,6 @@
 								});
 							}
 						},
-						sendAgentPrompt: (prompt, usePro) => {
-							if (currentSocket) {
-								currentSocket.emit('run-agent-prompt', {
-									windowId: window.api.windowId,
-									prompt,
-									usePro
-								});
-							}
-						},
 						sendInterrupt: () => {
 							if (currentSocket) {
 								currentSocket.emit('shell-interrupt', {
@@ -82,30 +73,12 @@
 						},
 						onShellOutput: callback => registerSocketListener('shell-output', callback),
 						onShellComplete: callback => registerSocketListener('shell-complete', callback),
-						onAgentChunk: callback => registerSocketListener('agent-chunk', callback),
-						onAgentComplete: callback => registerSocketListener('agent-complete', callback),
-						onAgentToolStart: callback => registerSocketListener('agent-tool-start', callback),
-						onAgentToolOutput: callback => registerSocketListener('agent-tool-output', callback),
-						onAgentToolComplete: callback => registerSocketListener('agent-tool-complete', callback),
-						onAgentStatus: callback => registerSocketListener('agent-status', callback),
 						onWindowInit: callback => registerSocketListener('window-init', callback),
 						onPinnedDirsUpdated: callback => registerSocketListener('pinned-dirs-updated', callback),
 						onShowQrCode: callback => registerSocketListener('show-qrcode', callback),
 						onHideQrCode: callback => registerSocketListener('hide-qrcode', callback),
 						onShellCommandStart: callback => registerSocketListener('shell-command-start', callback),
-						onAgentPromptStart: callback => registerSocketListener('agent-prompt-start', callback),
-						onAgentAskUser: callback => registerSocketListener('agent-ask-user', callback),
-						onAgentTodoUpdate: callback => registerSocketListener('agent-todo-update', callback),
-						onAgentPlanMode: callback => registerSocketListener('agent-plan-mode', callback),
 						onFingerprintPrompt: callback => registerSocketListener('fingerprint-prompt', callback),
-						sendAgentUserAnswer: answer => {
-							if (currentSocket) {
-								currentSocket.emit('agent-user-answer', {
-									windowId: window.api.windowId,
-									answer
-								});
-							}
-						},
 						sendSudoPassword: password => {
 							if (currentSocket) {
 								currentSocket.emit('sudo-password', {
@@ -120,14 +93,6 @@
 								currentSocket.emit('execute-slash-command', {
 									windowId: window.api.windowId,
 									command
-								});
-							}
-						},
-						sendApiKey: key => {
-							if (currentSocket) {
-								currentSocket.emit('send-api-key', {
-									windowId: window.api.windowId,
-									key
 								});
 							}
 						},

@@ -342,7 +342,7 @@ function startMobileServer() {
 		res.send('pong');
 	});
 
-	expressApp.use(express.static(path.join(__dirname, 'window')));
+	expressApp.use(express.static(path.join(__dirname, 'public')));
 
 	io_server.on('connection', socket => {
 		let joinedRoom = null;
@@ -704,8 +704,8 @@ function startMobileServer() {
 
 	return new Promise((resolve, reject) => {
 		let port = 13737;
-		if (process.env.PWA_SERVER_PORT) {
-			port = parseInt(process.env.PWA_SERVER_PORT, 10);
+		if (process.env.LOCAL_SERVER_PORT) {
+			port = parseInt(process.env.LOCAL_SERVER_PORT, 10);
 		} else if (process.env.PORT) {
 			port = parseInt(process.env.PORT, 10);
 		}

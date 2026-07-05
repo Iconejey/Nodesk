@@ -1,11 +1,11 @@
 {
 	"name": "nodesk",
 	"version": "1.0.0",
-	"main": "main.js",
+	"main": "local-server.js",
 	"scripts": {
-		"start": "node main.js",
-		"web-app": "node main.js",
-		"web-app-prod": "pm2 start main.js --name nodesk"
+		"start": "node local-server.js",
+		"web-app": "node pwa-server.js",
+		"web-app-prod": "pm2 start pwa-server.js --name nodesk-pwa"
 	},
 	"dependencies": {
 		"express": "^5.2.1",

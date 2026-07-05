@@ -1,32 +1,32 @@
 {
-  "name": "Nodesk",
-  "short_name": "Nodesk",
-  "description": "Premium persistent terminal and workspace manager",
-  "start_url": "/",
-  "scope": "/",
-  "display": "standalone",
-  "background_color": "#131313",
-  "theme_color": "#191919",
-  "orientation": "any",
-  "icons": [
-    {
-      "src": "https://icons.ngwy.fr/maskable/code/c792ea/242424/512/512",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "https://icons.ngwy.fr/badge/code/none/c792ea/512/512",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "monochrome"
-    }
-  ],
-  "badges": [
-    {
-      "src": "https://icons.ngwy.fr/badge/code/none/c792ea/512/512",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
-  ]
+	"name": "Nodesk",
+	"short_name": "Nodesk",
+	"description": "Remote desktop and terminal Nosuite app.",
+	"start_url": "/",
+	"scope": "/",
+	"display": "standalone",
+	"background_color": "#131313",
+	"theme_color": "#191919",
+	"orientation": "any",
+	"icons": [
+		{
+			"src": "https://icons.ngwy.fr/maskable/devices/abdcfd/242424/512/512",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "any maskable"
+		},
+		{
+			"src": "https://icons.ngwy.fr/badge/code/none/abdcfd/512/512",
+			"sizes": "512x512",
+			"type": "image/png",
+			"purpose": "monochrome"
+		}
+	],
+	"badges": [
+		{
+			"src": "https://icons.ngwy.fr/badge/code/none/abdcfd/512/512",
+			"sizes": "512x512",
+			"type": "image/png"
+		}
+	]
 }

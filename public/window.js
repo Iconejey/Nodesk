@@ -1,6 +1,23 @@
 // Renderer process UI logic for Nodesk
 const is_mobile = !window.api || !window.api.isElectron;
 
+window.localServerPort = window.location.port ? parseInt(window.location.port, 10) : 13737;
+
+(async function loadConfig() {
+	try {
+		const res = await fetch('/api/config');
+		if (res.ok) {
+			const data = await res.json();
+			if (data.localServerPort) {
+				window.localServerPort = data.localServerPort;
+				console.log(`Loaded local server port from VPS config: ${window.localServerPort}`);
+			}
+		}
+	} catch (e) {
+		// Ignore, fallback to window.location.port or 13737
+	}
+})();
+
 function showCancelButton() {
 	const btn = document.getElementById('cancel-task-btn');
 	if (btn) {
@@ -123,7 +140,7 @@ function saveKnownHost(ip, port) {
 
 async function startSubnetScan(ignoreKnown = false) {
 	if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-		saveKnownHost(window.location.hostname, window.location.port || '13737');
+		saveKnownHost(window.location.hostname, String(window.localServerPort));
 	}
 	if (isScanning) {
 		if (scanAbortController) {
@@ -150,7 +167,6 @@ async function startSubnetScan(ignoreKnown = false) {
 	};
 
 	const subnets = getSubnetsToScan();
-	const portsToCheck = [13737, 13738, 13739];
 	const totalIps = 254;
 
 	scanAbortController = new AbortController();
@@ -227,43 +243,41 @@ async function startSubnetScan(ignoreKnown = false) {
 
 			for (let j = i; j < i + batchSize && j <= totalIps; j++) {
 				const ip = `${subnet}.${j}`;
-				for (const p of portsToCheck) {
-					batch.push(
-						(async () => {
-							if (serverFound || (window.api && window.api.windowId)) return;
-							try {
-								const res = await fetch(`http://${ip}:${p}/api/active-windows`, {
-									signal: scanAbortController.signal
-								});
-								if (res.ok) {
-									const data = await res.json();
-									if (data.windows && data.windows.length > 0) {
-										serverFound = true;
-										scanAbortController.abort(); // Cancel other pending requests
+				batch.push(
+					(async () => {
+						if (serverFound || (window.api && window.api.windowId)) return;
+						try {
+							const res = await fetch(`http://${ip}:${window.localServerPort}/api/active-windows`, {
+								signal: scanAbortController.signal
+							});
+							if (res.ok) {
+								const data = await res.json();
+								if (data.windows && data.windows.length > 0) {
+									serverFound = true;
+									scanAbortController.abort(); // Cancel other pending requests
 
-										data.windows.forEach(w => {
-											const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
-											const exists = window.discoveredWindows.some(d => d.ip === ip && d.port === p && d.id === w.id);
-											if (!exists) {
-												window.discoveredWindows.push({
-													ip,
-													port: p,
-													id: w.id,
-													timeStr,
-													cwd: w.cwd
-												});
-											}
-										});
+									data.windows.forEach(w => {
+										const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
+										const exists = window.discoveredWindows.some(d => d.ip === ip && d.port === window.localServerPort && d.id === w.id);
+										if (!exists) {
+											window.discoveredWindows.push({
+												ip,
+												port: window.localServerPort,
+												id: w.id,
+												timeStr,
+												cwd: w.cwd
+											});
+										}
+									});
 
-										renderConnectionOverlay('', window.discoveredWindows);
-									}
+									renderConnectionOverlay('', window.discoveredWindows);
 								}
-							} catch (e) {
-								// ignore
 							}
-						})()
-					);
-				}
+						} catch (e) {
+							// ignore
+						}
+					})()
+				);
 			}
 			try {
 				await Promise.all(batch);
@@ -1002,11 +1016,12 @@ function submitInput(text, usePro = false) {
 		if (parts[0] === 'connect' && parts.length >= 2) {
 			const ip = parts[1];
 			const winId = parts[2] || '1';
-			appendTerminalSystemMessage(`Attempting connection to ${ip}:13737 (Window #${winId})...`);
+			const defaultPort = String(window.localServerPort);
+			appendTerminalSystemMessage(`Attempting connection to ${ip}:${defaultPort} (Window #${winId})...`);
 			window.api
-				.connectToHost(ip, '13737', winId)
+				.connectToHost(ip, defaultPort, winId)
 				.then(() => {
-					saveKnownHost(ip, '13737');
+					saveKnownHost(ip, defaultPort);
 					appendTerminalSystemMessage('Connected successfully.');
 				})
 				.catch(err => {

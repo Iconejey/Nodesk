@@ -30,6 +30,13 @@ app.use((req, res, next) => {
 	next();
 });
 
+// API configuration endpoint for PWA client
+app.get('/api/config', (req, res) => {
+	res.json({
+		localServerPort: process.env.LOCAL_SERVER_PORT ? parseInt(process.env.LOCAL_SERVER_PORT, 10) : 13737
+	});
+});
+
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, 'public')));
 

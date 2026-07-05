@@ -7,8 +7,6 @@
 	},
 	"scripts": {
 		"start": "node local-server.js",
-		"web-app": "node pwa-server.js",
-		"web-app-prod": "pm2 start pwa-server.js --name nodesk-pwa",
 		"qr": "node qr.js"
 	},
 	"dependencies": {

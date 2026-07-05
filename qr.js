@@ -36,9 +36,9 @@ function getLocalIpAddress() {
 
 const ip = getLocalIpAddress();
 const port = process.env.LOCAL_SERVER_PORT ? parseInt(process.env.LOCAL_SERVER_PORT, 10) : (process.env.PORT ? parseInt(process.env.PORT, 10) : 13737);
-const targetUrl = `https://nodesk.ngwy.fr?host=${ip}:${port}`;
+const targetUrl = `http://${ip}:${port}`;
 
-console.log(`\nScan the QR code below to connect your mobile PWA to your local host:\n`);
+console.log(`\nScan the QR code below to open Nodesk directly on your mobile device:\n`);
 console.log(`Connection URL: ${targetUrl}\n`);
 
 try {

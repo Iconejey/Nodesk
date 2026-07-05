@@ -3,20 +3,16 @@ const is_mobile = !window.api || !window.api.isElectron;
 
 window.localServerPort = window.location.port ? parseInt(window.location.port, 10) : 13737;
 
-(async function loadConfig() {
-	try {
-		const res = await fetch('/api/config');
-		if (res.ok) {
-			const data = await res.json();
-			if (data.localServerPort) {
-				window.localServerPort = data.localServerPort;
-				console.log(`Loaded local server port from VPS config: ${window.localServerPort}`);
-			}
-		}
-	} catch (e) {
-		// Ignore, fallback to window.location.port or 13737
+
+
+function handleConnectionError(err, ip) {
+	let msg = err.message || String(err);
+	const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+	if (window.location.protocol === 'https:' && (isIp || (ip !== 'localhost' && ip !== '127.0.0.1'))) {
+		msg += '\n\nNote: Browsers block HTTP local network connections from HTTPS pages (Mixed Content). Please access the PWA via HTTP (http://nodesk.ngwy.fr) or allow "Insecure content" in your browser Site Settings for this origin.';
 	}
-})();
+	return msg;
+}
 
 function showCancelButton() {
 	const btn = document.getElementById('cancel-task-btn');
@@ -32,265 +28,10 @@ function hideCancelButton() {
 	}
 }
 
-let isScanning = false;
-let scanAbortController = null;
-
-function renderConnectionOverlay(statusText, windowsList = []) {
+function renderConnectionOverlay(statusText) {
 	const body = document.getElementById('connection-body');
 	if (!body) return;
-	body.innerHTML = '';
-
-	if (windowsList.length === 0) {
-		body.innerHTML = `<div class="diff-empty-msg">${statusText}</div>`;
-		return;
-	}
-
-	const section = document.createElement('div');
-	section.className = 'diff-section';
-	section.innerHTML = `<div class="diff-section-header">Discovered Sessions</div>`;
-
-	const list = document.createElement('div');
-	list.className = 'diff-list';
-
-	windowsList.forEach(w => {
-		const item = document.createElement('div');
-		item.className = 'diff-item';
-		item.style.cursor = 'pointer';
-		item.style.display = 'flex';
-		item.style.flexDirection = 'column';
-		item.style.alignItems = 'flex-start';
-		item.style.padding = '14px 18px';
-		item.style.gap = '4px';
-		item.style.width = '100%';
-		item.style.boxSizing = 'border-box';
-		item.style.marginBottom = '8px';
-
-		item.innerHTML = `
-      <div style="font-weight: bold; color: var(--purple); font-size: 1.05em; font-family: monospace;">Host: ${w.ip}:${w.port}</div>
-      <div style="color: var(--white); font-size: 0.95em; font-family: monospace;">Window ID: ${w.id}</div>
-      <div style="color: var(--gray-light); font-size: 0.85em; font-family: monospace;">Started: ${w.timeStr}</div>
-      <div style="color: var(--gray); font-size: 0.8em; font-family: monospace; word-break: break-all; margin-top: 4px;">Path: ${w.cwd}</div>
-    `;
-
-		const connectFn = () => {
-			item.style.pointerEvents = 'none';
-			item.style.opacity = '0.6';
-			const hostDiv = item.firstElementChild;
-			if (hostDiv) hostDiv.textContent = 'Linking...';
-
-			window.api
-				.connectToHost(w.ip, w.port, w.id)
-				.then(() => {
-					saveKnownHost(w.ip, w.port);
-					document.body.classList.remove('conn-active');
-				})
-				.catch(err => {
-					item.style.pointerEvents = 'auto';
-					item.style.opacity = '1';
-					if (hostDiv) hostDiv.textContent = `Host: ${w.ip}:${w.port}`;
-					alert('Failed to connect: ' + err.message);
-				});
-		};
-
-		item.addEventListener('click', () => {
-			if (is_mobile) {
-				const docEl = document.documentElement;
-				const reqFS = docEl.requestFullscreen || docEl.webkitRequestFullscreen || docEl.mozRequestFullScreen || docEl.msRequestFullscreen;
-				if (reqFS) {
-					reqFS.call(docEl).catch(err => {
-						console.warn('Fullscreen request failed:', err);
-					});
-				}
-			}
-			connectFn();
-		});
-
-		list.appendChild(item);
-	});
-
-	section.appendChild(list);
-	body.appendChild(section);
-}
-
-function getTargetUrl(ip, port) {
-	if (ip.startsWith('http://') || ip.startsWith('https://')) {
-		return ip;
-	}
-	const isIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
-	const hasPort = ip.includes(':');
-	const protocol = window.location.protocol === 'https:' && !isIp ? 'https' : 'http';
-	if (hasPort || isIp || ip === 'localhost') {
-		return `${protocol}://${ip}${hasPort ? '' : ':' + port}`;
-	}
-	return `${protocol}://${ip}`;
-}
-
-function saveKnownHost(ip, port) {
-	try {
-		let known = JSON.parse(localStorage.getItem('nodesk_known_hosts')) || [];
-		if (!Array.isArray(known)) known = [];
-		known = known.filter(h => h.ip !== ip || h.port !== port);
-		known.unshift({ ip, port });
-		if (known.length > 10) known = known.slice(0, 10);
-		localStorage.setItem('nodesk_known_hosts', JSON.stringify(known));
-	} catch (e) {
-		console.error('Failed to save known host:', e);
-	}
-}
-
-async function startSubnetScan(ignoreKnown = false) {
-	if (window.location.hostname && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
-		saveKnownHost(window.location.hostname, String(window.localServerPort));
-	}
-	if (isScanning) {
-		if (scanAbortController) {
-			scanAbortController.abort();
-		}
-	}
-	isScanning = true;
-	window.discoveredWindows = [];
-
-	document.body.classList.add('conn-active');
-	renderConnectionOverlay('Scanning local network...');
-
-	const getSubnetsToScan = () => {
-		const host = window.location.hostname;
-		const subnets = ['192.168.1', '192.168.0', '192.168.2', '10.0.0'];
-		const match = host.match(/^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$/);
-		if (match && !host.startsWith('127.')) {
-			const localSubnet = match[1];
-			if (!subnets.includes(localSubnet)) {
-				subnets.unshift(localSubnet);
-			}
-		}
-		return subnets;
-	};
-
-	const subnets = getSubnetsToScan();
-	const totalIps = 254;
-
-	scanAbortController = new AbortController();
-	let serverFound = false;
-
-	// Try known hosts first for instant PWA loading
-	if (!ignoreKnown) {
-		let knownHosts = [];
-		try {
-			const saved = JSON.parse(localStorage.getItem('nodesk_known_hosts')) || [];
-			if (saved.length === 0) {
-				const oldIp = localStorage.getItem('nodesk_ip');
-				const oldPort = localStorage.getItem('nodesk_port');
-				if (oldIp && oldPort) {
-					saved.push({ ip: oldIp, port: oldPort });
-				}
-			}
-			knownHosts = saved;
-		} catch (e) {
-			// ignore
-		}
-
-		if (knownHosts.length > 0) {
-			renderConnectionOverlay('Checking known hosts...');
-			const knownBatch = knownHosts.map(async host => {
-				if (serverFound || (window.api && window.api.windowId)) return;
-				try {
-					const baseUrl = getTargetUrl(host.ip, host.port);
-					const res = await fetch(`${baseUrl}/api/active-windows`, {
-						signal: scanAbortController.signal
-					});
-					if (res.ok) {
-						const data = await res.json();
-						if (data.windows && data.windows.length > 0) {
-							serverFound = true;
-							scanAbortController.abort(); // Cancel other pending requests
-							data.windows.forEach(w => {
-								const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
-								const exists = window.discoveredWindows.some(d => d.ip === host.ip && d.port === host.port && d.id === w.id);
-								if (!exists) {
-									window.discoveredWindows.push({
-										ip: host.ip,
-										port: host.port,
-										id: w.id,
-										timeStr,
-										cwd: w.cwd
-									});
-								}
-							});
-							renderConnectionOverlay('', window.discoveredWindows);
-						}
-					}
-				} catch (e) {
-					// ignore
-				}
-			});
-			try {
-				await Promise.all(knownBatch);
-			} catch (e) {
-				// ignore
-			}
-		}
-	}
-
-	for (const subnet of subnets) {
-		if (serverFound || (window.api && window.api.windowId)) break;
-
-		renderConnectionOverlay(`Scanning subnet ${subnet}.*...`);
-		const batchSize = 30;
-
-		for (let i = 1; i <= totalIps; i += batchSize) {
-			if (serverFound || (window.api && window.api.windowId)) break;
-			const batch = [];
-
-			for (let j = i; j < i + batchSize && j <= totalIps; j++) {
-				const ip = `${subnet}.${j}`;
-				batch.push(
-					(async () => {
-						if (serverFound || (window.api && window.api.windowId)) return;
-						try {
-							const res = await fetch(`http://${ip}:${window.localServerPort}/api/active-windows`, {
-								signal: scanAbortController.signal
-							});
-							if (res.ok) {
-								const data = await res.json();
-								if (data.windows && data.windows.length > 0) {
-									serverFound = true;
-									scanAbortController.abort(); // Cancel other pending requests
-
-									data.windows.forEach(w => {
-										const timeStr = w.startTime ? new Date(w.startTime).toLocaleString() : 'Unknown';
-										const exists = window.discoveredWindows.some(d => d.ip === ip && d.port === window.localServerPort && d.id === w.id);
-										if (!exists) {
-											window.discoveredWindows.push({
-												ip,
-												port: window.localServerPort,
-												id: w.id,
-												timeStr,
-												cwd: w.cwd
-											});
-										}
-									});
-
-									renderConnectionOverlay('', window.discoveredWindows);
-								}
-							}
-						} catch (e) {
-							// ignore
-						}
-					})()
-				);
-			}
-			try {
-				await Promise.all(batch);
-			} catch (e) {
-				// ignore
-			}
-		}
-	}
-
-	isScanning = false;
-	if (!serverFound) {
-		renderConnectionOverlay('Scan complete. No active Nodesk servers found.');
-	}
+	body.innerHTML = `<div class="diff-empty-msg">${statusText}</div>`;
 }
 
 function logMobileEvent(type, ...args) {
@@ -456,11 +197,10 @@ function renderSuggestions(filtered) {
 				window.api
 					.connectToHost(cmd.ip, cmd.port, cmd.winId)
 					.then(() => {
-						saveKnownHost(cmd.ip, cmd.port);
 						appendTerminalSystemMessage('Connected successfully.');
 					})
 					.catch(err => {
-						appendTerminalSystemMessage('Connection failed: ' + err.message);
+						appendTerminalSystemMessage(handleConnectionError(err, cmd.ip));
 					});
 				return;
 			}
@@ -870,11 +610,10 @@ function setupInputListeners(input_elem) {
 						window.api
 							.connectToHost(active_suggestion.ip, active_suggestion.port, active_suggestion.winId)
 							.then(() => {
-								saveKnownHost(active_suggestion.ip, active_suggestion.port);
 								appendTerminalSystemMessage('Connected successfully.');
 							})
 							.catch(err => {
-								appendTerminalSystemMessage('Connection failed: ' + err.message);
+								appendTerminalSystemMessage(handleConnectionError(err, active_suggestion.ip));
 							});
 						return;
 					}
@@ -910,6 +649,11 @@ function setupInputListeners(input_elem) {
 					}
 
 					if (active_suggestion && active_suggestion.isBashCommand) {
+						if (e.key === 'Enter') {
+							hideSuggestions();
+							submitInput(input_elem.textContent, e.ctrlKey && e.shiftKey);
+							return;
+						}
 						input_elem.textContent = active_suggestion.name + ' ';
 						placeCaretAtEnd(input_elem);
 						hideSuggestions();
@@ -1021,11 +765,10 @@ function submitInput(text, usePro = false) {
 			window.api
 				.connectToHost(ip, defaultPort, winId)
 				.then(() => {
-					saveKnownHost(ip, defaultPort);
 					appendTerminalSystemMessage('Connected successfully.');
 				})
 				.catch(err => {
-					appendTerminalSystemMessage('Connection failed: ' + err.message);
+					appendTerminalSystemMessage(handleConnectionError(err, ip));
 				});
 		} else {
 			appendTerminalSystemMessage(`Unknown command: "${trimmed}". Select a suggestion or type: connect [ip] [window_id]`);
@@ -1916,35 +1659,47 @@ window.addEventListener('DOMContentLoaded', () => {
 		const rescanBtn = document.getElementById('conn-btn-refresh');
 		if (rescanBtn) {
 			rescanBtn.addEventListener('click', () => {
-				startSubnetScan(true); // Ignore known hosts on manual refresh/rescan
+				const ip = window.location.hostname || 'localhost';
+				const port = String(window.localServerPort);
+				renderConnectionOverlay(`Connecting to Nodesk Host at ${ip}:${port}...`);
+				window.api
+					.connectToHost(ip, port, '1')
+					.then(() => {
+						document.body.classList.remove('conn-active');
+					})
+					.catch(err => {
+						renderConnectionOverlay(`Connection failed: ${handleConnectionError(err, ip)}. Tap refresh to retry.`);
+					});
 			});
 		}
 
 		const params = new URLSearchParams(window.location.search);
 		const hostParam = params.get('host');
+		
+		let ip = window.location.hostname || 'localhost';
+		let port = String(window.localServerPort);
+		
 		if (hostParam) {
 			const parts = hostParam.split(':');
-			const ip = parts[0];
-			const port = parts[1] || String(window.localServerPort);
-			console.log(`Auto-connecting to QR code host: ${ip}:${port}`);
-
+			ip = parts[0];
+			if (parts[1]) port = parts[1];
+			
 			const newUrl = window.location.pathname + window.location.hash;
 			window.history.replaceState({}, document.title, newUrl);
-
-			renderConnectionOverlay('Linking from QR code...');
-			window.api
-				.connectToHost(ip, port, '1')
-				.then(() => {
-					saveKnownHost(ip, port);
-					document.body.classList.remove('conn-active');
-				})
-				.catch(err => {
-					alert('QR connection failed: ' + err.message);
-					startSubnetScan(false);
-				});
-		} else {
-			startSubnetScan(false); // Check known hosts first on startup
 		}
+
+		console.log(`Auto-connecting to Nodesk host: ${ip}:${port}`);
+		document.body.classList.add('conn-active');
+		renderConnectionOverlay(`Connecting to Nodesk Host at ${ip}:${port}...`);
+		
+		window.api
+			.connectToHost(ip, port, '1')
+			.then(() => {
+				document.body.classList.remove('conn-active');
+			})
+			.catch(err => {
+				renderConnectionOverlay(`Connection failed: ${handleConnectionError(err, ip)}. Tap refresh to retry.`);
+			});
 	}
 
 	const cancelBtn = document.getElementById('cancel-task-btn');
@@ -2036,7 +1791,17 @@ if (window.api.onDisconnect) {
 		hideCancelButton();
 		document.body.classList.add('conn-active');
 		renderConnectionOverlay('Disconnected from server. Reconnecting...');
-		startSubnetScan();
+		
+		const ip = window.location.hostname || 'localhost';
+		const port = String(window.localServerPort);
+		window.api
+			.connectToHost(ip, port, '1')
+			.then(() => {
+				document.body.classList.remove('conn-active');
+			})
+			.catch(err => {
+				renderConnectionOverlay(`Connection failed: ${handleConnectionError(err, ip)}. Tap refresh to retry.`);
+			});
 	});
 }
 
@@ -3003,15 +2768,17 @@ function closeMobileModal() {
 window.api.onShellCommandStart(({ command }) => {
 	showCancelButton();
 	const input_elem = document.getElementById('active-input');
-	if (input_elem && input_elem.hasAttribute('contenteditable')) {
+	if (input_elem) {
 		input_elem.textContent = command;
 		input_elem.removeAttribute('contenteditable');
 		input_elem.classList.remove('ai-prompt');
 
 		const active_block = document.getElementById('active-chat-block');
-		active_output_block = document.createElement('pre');
-		active_output_block.className = 'output';
-		active_block.appendChild(active_output_block);
+		if (active_block && !active_output_block) {
+			active_output_block = document.createElement('pre');
+			active_output_block.className = 'output';
+			active_block.appendChild(active_output_block);
+		}
 
 		hideSuggestions();
 	}
@@ -3321,9 +3088,12 @@ async function handleBashCommandSuggestions(query) {
 		hideSuggestions();
 		return;
 	}
-	const result = await window.api.getBashCommands(query);
-	if (result && result.commands && result.commands.length > 0) {
-		const suggestions = result.commands.map(cmd => {
+	const matched = Array.from(available_commands)
+		.filter(cmd => cmd.toLowerCase().startsWith(query.toLowerCase()))
+		.slice(0, 10);
+
+	if (matched.length > 0) {
+		const suggestions = matched.map(cmd => {
 			return {
 				name: cmd,
 				description: 'Bash Command',

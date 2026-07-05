@@ -5,7 +5,7 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
 		<meta name="theme-color" content="#191919" />
 		<title>Nodesk</title>
-		<link rel="manifest" href="/manifest.json" />
+
 		<link rel="apple-touch-icon" href="https://icons.ngwy.fr/maskable/devices/abdcfd/242424/512/512" />
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -13,14 +13,6 @@
 		<script>
 			(function () {
 				// Register PWA service worker
-				if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
-					window.addEventListener('load', () => {
-						navigator.serviceWorker
-							.register('/sw.js')
-							.then(reg => console.log('ServiceWorker registration successful:', reg.scope))
-							.catch(err => console.error('ServiceWorker registration failed:', err));
-					});
-				}
 
 				if (!window.api) {
 					// Set up a promise that resolves when socket is connected
@@ -270,7 +262,7 @@
 							if (!window.io) {
 								s = document.createElement('script');
 								s.id = socketScriptId;
-								s.src = `https://cdn.socket.io/4.8.3/socket.io.min.js`; // Use CDN for VPS/remote clients
+								s.src = `/socket.io/socket.io.js`;
 								s.onload = initSocket;
 								s.onerror = () => reject(new Error('Failed to load Socket.io client library'));
 								document.head.appendChild(s);

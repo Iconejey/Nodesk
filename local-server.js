@@ -342,7 +342,7 @@ function startMobileServer() {
 		res.send('pong');
 	});
 
-
+	expressApp.use(express.static(path.join(__dirname, 'public')));
 
 	io_server.on('connection', socket => {
 		let joinedRoom = null;

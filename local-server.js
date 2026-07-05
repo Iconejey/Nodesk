@@ -714,7 +714,7 @@ function startMobileServer() {
 			httpServer.listen(p, '0.0.0.0', () => {
 				server_port = p;
 				web_server = httpServer;
-				console.log(`Mobile Express/Socket.io server started on port ${server_port}`);
+				console.log(`Nodesk Local Server started on port ${server_port}`);
 				resolve(server_port);
 			});
 
@@ -1528,10 +1528,8 @@ function startDbusMonitor() {
 }
 
 // Start mobile Express/Socket.io server immediately
-startMobileServer().then(port => {
-	console.log(`Nodesk PWA server started on port ${port}`);
-}).catch(err => {
-	console.error('Failed to start mobile server on startup:', err);
+startMobileServer().catch(err => {
+	console.error('Failed to start Nodesk Local Server on startup:', err);
 });
 startDbusMonitor();
 

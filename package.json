@@ -2,10 +2,14 @@
 	"name": "nodesk",
 	"version": "1.0.0",
 	"main": "local-server.js",
+	"bin": {
+		"nodesk-qr": "./qr.js"
+	},
 	"scripts": {
 		"start": "node local-server.js",
 		"web-app": "node pwa-server.js",
-		"web-app-prod": "pm2 start pwa-server.js --name nodesk-pwa"
+		"web-app-prod": "pm2 start pwa-server.js --name nodesk-pwa",
+		"qr": "node qr.js"
 	},
 	"dependencies": {
 		"express": "^5.2.1",

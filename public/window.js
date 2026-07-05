@@ -1920,7 +1920,31 @@ window.addEventListener('DOMContentLoaded', () => {
 			});
 		}
 
-		startSubnetScan(false); // Check known hosts first on startup
+		const params = new URLSearchParams(window.location.search);
+		const hostParam = params.get('host');
+		if (hostParam) {
+			const parts = hostParam.split(':');
+			const ip = parts[0];
+			const port = parts[1] || String(window.localServerPort);
+			console.log(`Auto-connecting to QR code host: ${ip}:${port}`);
+
+			const newUrl = window.location.pathname + window.location.hash;
+			window.history.replaceState({}, document.title, newUrl);
+
+			renderConnectionOverlay('Linking from QR code...');
+			window.api
+				.connectToHost(ip, port, '1')
+				.then(() => {
+					saveKnownHost(ip, port);
+					document.body.classList.remove('conn-active');
+				})
+				.catch(err => {
+					alert('QR connection failed: ' + err.message);
+					startSubnetScan(false);
+				});
+		} else {
+			startSubnetScan(false); // Check known hosts first on startup
+		}
 	}
 
 	const cancelBtn = document.getElementById('cancel-task-btn');

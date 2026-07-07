@@ -2725,9 +2725,85 @@ window.api.onShellCommandStart(({ command }) => {
 
 
 
+function ansiToHtml(text) {
+	let safe = text
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;');
+
+	const ansiColors = {
+		30: 'color: var(--black, #000000);',
+		31: 'color: var(--red, #ff5555);',
+		32: 'color: var(--green, #50fa7b);',
+		33: 'color: var(--yellow, #f1fa8c);',
+		34: 'color: var(--blue, #bd93f9);',
+		35: 'color: var(--magenta, #ff79c6);',
+		36: 'color: var(--cyan, #8be9fd);',
+		37: 'color: var(--white, #f8f8f2);',
+		90: 'color: var(--gray, #6272a4);',
+		91: 'color: var(--bright-red, #ff6e6e);',
+		92: 'color: var(--bright-green, #69ff94);',
+		93: 'color: var(--bright-yellow, #ffffa5);',
+		94: 'color: var(--bright-blue, #d6fcff);',
+		95: 'color: var(--bright-magenta, #ff92df);',
+		96: 'color: var(--bright-cyan, #a4ffff);',
+		97: 'color: var(--bright-white, #ffffff);',
+		40: 'background-color: var(--black, #000000);',
+		41: 'background-color: var(--red, #ff5555);',
+		42: 'background-color: var(--green, #50fa7b);',
+		43: 'background-color: var(--yellow, #f1fa8c);',
+		44: 'background-color: var(--blue, #bd93f9);',
+		45: 'background-color: var(--magenta, #ff79c6);',
+		46: 'background-color: var(--cyan, #8be9fd);',
+		47: 'background-color: var(--white, #f8f8f2);',
+		100: 'background-color: var(--gray, #6272a4);',
+		101: 'background-color: var(--bright-red, #ff6e6e);',
+		102: 'background-color: var(--bright-green, #69ff94);',
+		103: 'background-color: var(--bright-yellow, #ffffa5);',
+		104: 'background-color: var(--bright-blue, #d6fcff);',
+		105: 'background-color: var(--bright-magenta, #ff92df);',
+		106: 'background-color: var(--bright-cyan, #a4ffff);',
+		107: 'background-color: var(--bright-white, #ffffff);',
+		1: 'font-weight: bold;',
+		4: 'text-decoration: underline;'
+	};
+
+	const parts = safe.split(/\x1B\[([0-9;]*)m/);
+	let result = '';
+	let currentStyles = {};
+
+	for (let i = 0; i < parts.length; i++) {
+		if (i % 2 === 0) {
+			if (parts[i]) {
+				const styleStr = Object.values(currentStyles).join(' ');
+				if (styleStr) {
+					result += `<span style="${styleStr}">${parts[i]}</span>`;
+				} else {
+					result += parts[i];
+				}
+			}
+		} else {
+			const codes = parts[i].split(';');
+			for (const codeStr of codes) {
+				const code = parseInt(codeStr, 10) || 0;
+				if (code === 0) {
+					currentStyles = {};
+				} else if (ansiColors[code]) {
+					currentStyles[code] = ansiColors[code];
+				}
+			}
+		}
+	}
+	return result;
+}
+
 window.api.onShellOutput(data => {
 	if (active_output_block) {
-		active_output_block.textContent += data.text;
+		if (active_output_block.rawText === undefined) {
+			active_output_block.rawText = '';
+		}
+		active_output_block.rawText += data.text;
+		active_output_block.innerHTML = ansiToHtml(active_output_block.rawText);
 		window.scrollTo(0, document.body.scrollHeight);
 	}
 });
